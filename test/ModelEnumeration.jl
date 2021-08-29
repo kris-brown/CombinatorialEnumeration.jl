@@ -1,4 +1,20 @@
 include(joinpath(@__DIR__, "../src/ModelEnumeration.jl"))
+include(joinpath(@__DIR__, "FLS.jl"))
+
+# Example from earlier
+# chase a complete model, should give one model
+Ks, Ms = chasestep(fls, xmodrel)
+@test isempty(Ks)
+@test only(values(Ms)) == xmodrel
+
+
+db = init_db("test.db"; rem=true)
+add_model(db, fls, xmodrel) # adds one premodel and one model
+Kids, Mids = chasestep_db(db, fls, 1)
+@test isempty(Kids)
+@test Mids == [1]
+
+chase_below(db, fls, 1)
 
 # Example: categories
 
@@ -27,7 +43,7 @@ cmpconed = @acset LabeledGraph_{Symbol} begin
   src = [1,2]
   tgt = [3,3]
 end
-cmpcone = Cone(cmpconed,      :cmp,     Dict([1=>:c1, 2=>:c2]))
+cmpcone = Cone(cmpconed, :cmp, [1=>:c1, 2=>:c2])
 """(m₁⋅m₂)⋅m₃"""
 asc_l_coned =  @acset LabeledGraph_{Symbol} begin
   V = 3
@@ -38,7 +54,7 @@ asc_l_coned =  @acset LabeledGraph_{Symbol} begin
   tgt = [3,3]
 end
 
-asc_l_cone = Cone(asc_l_coned,   :asc_l,   Dict([1=>:l1, 2=>:l2]))
+asc_l_cone = Cone(asc_l_coned,   :asc_l,  [1=>:l1, 2=>:l2])
 
 """m₁⋅(m₂⋅m₃)"""
 asc_r_coned =  @acset LabeledGraph_{Symbol} begin
@@ -49,7 +65,7 @@ asc_r_coned =  @acset LabeledGraph_{Symbol} begin
   src = [1,2]
   tgt = [3,3]
 end
-asc_r_cone = Cone(asc_r_coned,   :asc_r,   Dict([1=>:r1, 2=>:r2]))
+asc_r_cone = Cone(asc_r_coned,   :asc_r,   [1=>:r1, 2=>:r2])
 
 leftid_coned = @acset LabeledGraph_{Symbol} begin
   V = 3
@@ -59,7 +75,7 @@ leftid_coned = @acset LabeledGraph_{Symbol} begin
   src = [3,1]
   tgt = [2,2]
 end
-leftid_cone = Cone(leftid_coned,  :leftid,  Dict([1=>:lidv, 2=>:lida, 3=>:lidc]))
+leftid_cone = Cone(leftid_coned,  :leftid,  [1=>:lidv, 2=>:lida, 3=>:lidc])
 
 rightid_coned = @acset LabeledGraph_{Symbol} begin
   V = 3
@@ -69,11 +85,11 @@ rightid_coned = @acset LabeledGraph_{Symbol} begin
   src = [3,1]
   tgt = [2,2]
 end
-rightid_cone = Cone(rightid_coned, :rightid, Dict([1=>:ridv, 2=>:rida, 3=>:ridc]))
+rightid_cone = Cone(rightid_coned, :rightid, [1=>:ridv, 2=>:rida, 3=>:ridc])
 
-catcones = Set([cmpcone, asc_l_cone, asc_r_cone, leftid_cone, rightid_cone])
+catcones = [cmpcone, asc_l_cone, asc_r_cone, leftid_cone, rightid_cone]
 
-cateqs = Set([
+cateqs = [
   # reflexivity
   [:refl, :src] => Symbol[],
   [:refl, :tgt] => Symbol[],
@@ -85,7 +101,7 @@ cateqs = Set([
   [:l1,:c2] => [:asc, :r1, :c1],
   [:l2, :c2] => [:asc, :r2, :c2],
   [:l2, :c3] => [:asc, :r1, :c3]
-])
+]
 
 catfls = FLS(:cat, catschema, catcones, cateqs)
 
@@ -98,5 +114,6 @@ J = initrel(catfls, I);
 # K = Ks[1] # 3^3 models, first one is free
 # e = apply_cones!(catfls, K)
 # apply_egds!(catfls, K, e)
-Ks = chasestep(catfls, J)
+Ks, Ms = chasestep(catfls, J)
+chase_below(db, catfls, 1)
 

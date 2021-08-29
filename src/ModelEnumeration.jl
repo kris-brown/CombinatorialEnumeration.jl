@@ -4,55 +4,125 @@ using Catlab.Programs.RelationalPrograms: parse_relation_context, parse_relation
 using Catlab.WiringDiagrams
 using DataStructures
 using IterTools
+using Combinatorics
 
-include(joinpath(@__DIR__, "../../CSetAutomorphisms.jl/src/CSetAutomorphisms.jl"))
 include(joinpath(@__DIR__, "FLS.jl"))
 include(joinpath(@__DIR__, "DB.jl"))
 
-
-
-"""
-Initialize a relation on a schema from either a model or a dict of cardinalities
-for each object.
-"""
-function initrel(F::FLS,
-               I::Union{Nothing, Dict{Symbol, Int}, StructACSet}=nothing,
-               )::StructACSet
-  if !(I isa StructACSet)
-    dic = I
-    I = grph_to_cset(F.name, F.schema)
-    for (k, v) in (dic === nothing ? [] : collect(dic))
-      add_parts!(I, k, v)
-    end
-  end
-  J = grph_to_crel(F.name, F.schema)
-  # Initialize data in J from I
-  for o in F.schema[:vlabel]
-    add_parts!(J, o, nparts(I, o))
-  end
-  for d in F.schema[:elabel]
-    hs, ht = add_srctgt(d)
-    for (i, v) in filter(x->x[2]!=0, collect(enumerate(I[d])))
-      n = add_part!(J, d)
-    set_subpart!(J, n, hs, i)
-    set_subpart!(J, n, ht, v)
-    end
-  end
-  return J
-end
-
 const EqClass = Dict{Symbol, IntDisjointSets}
+const ACDict = Dict{UInt64, StructACSet}
 
 """
 Do a chase step: TGDs, then cones + EGDs for each branch
 """
-function chasestep(F::FLS, J::StructACSet)::Vector{StructACSet}
-  res = []
+function chasestep(F::FLS, J::StructACSet)::Pair{ACDict, ACDict}
+  res, completed, srcs = ACDict(), ACDict(), F.schema[:vlabel][F.schema[:src]]
   for x in apply_tgds(F, J) # could be done in parallel
-    e = apply_cones!(F,x)
-    apply_egds!(F,x,e)
-    merge!(F, x, e)
-    push!(res, x)
+    e, changed = apply_cones!(F,x)
+    changed |= apply_egds!(F,x,e)
+    if changed || any([nparts(x, src)!=nparts(x,e) for (e, src) in
+                       zip(F.schema[:elabel], srcs)])
+      merge!(F, x, e)
+      xhsh = canonical_hash(x)
+      res[xhsh] = x
+    else
+      completed[canonical_hash(x)] = x
+    end
+  end
+  return res => completed
+end
+
+"""Take a premodel from the DB and generate a set of models and premodels
+Insert these results into the DB
+"""
+function chasestep_db(db::SQLite.DB, F::FLS, i::Int
+                     )::Pair{Vector{Int}, Vector{Int}}
+  # check if we've already chased before
+  if Bool(SQLite.getvalue(execute(db, "SELECT fired FROM Premodel WHERE Premodel_id=?",
+                             [i]),1,Int))
+    println("ALREADY CHASED!")
+    children = (execute(db, "SELECT child FROM Parent WHERE parent=?",[i]
+                        ) |> DataFrame)[!,:child]
+    modelchildren = (execute(db, """SELECT Premodel_id FROM Premodel JOIN Model
+      USING (Premodel_id) WHERE Premodel_id IN ($(join(children, ",")))"""
+      ) |> DataFrame)[!,:Premodel_id]
+    return setdiff(children, modelchildren),modelchildren
+  end
+  m, I = get_premodel(db, i)
+  xs, ys = chasestep(m, I)
+  pminds, minds = Int[], Int[]
+  for (xhsh, x) in xs
+    push!(pminds, add_premodel(db, F, x, i, xhsh))
+  end
+  for (yhsh, y) in ys
+    push!(minds, add_model(db, F, y, i, yhsh))
+  end
+  execute(db, "UPDATE Premodel SET fired = true WHERE Premodel_id = ?", [i])
+  return pminds => minds
+end
+
+"""
+1. Enumerate elements of ℕᵏ for an underlying graph with k nodes.
+2. For each of these: (c₁, ..., cₖ) create a term model with that many constants
+
+Do the first enumeration by incrementing n_nonzero and finding partitions so
+that ∑(c₁,...) = n_nonzero
+
+In the future, this function will write results to a database
+that hashes the FLS as well as the set of constants that generated the model.
+
+Also crucial is to decompose FLS into subparts that can be efficiently solved
+and have solutions stitched together.
+"""
+function combos_below(m::Int, n::Int)::Vector{Vector{Int}}
+  res = Set{Vector{Int}}([zeros(Int,m)])
+  n_const = 0 # total number of constants across all sets
+  for n_const in 1:n
+    for n_nonzero in 1:m
+      # values we'll assign to nodes
+      c_parts = partitions(n_const, n_nonzero)
+      # Which nodes we'll assign them to
+      indices = permutations(1:m,n_nonzero)
+      for c_partition in c_parts
+        for index_assignment in indices
+          v = zeros(Int, m)
+          v[index_assignment] = vcat(c_partition...)
+          push!(res, v)
+        end
+      end
+    end
+  end
+  return sort(collect(res))
+end
+
+
+"""
+Find all models below a certain cardinality.
+"""
+function chase_below(db::SQLite.DB, F::FLS, n::Int,
+                     nmax::Union{Nothing, Int}=nothing)
+  unchased, res, nmax  = Set{Int}(), Set{Int}(), nmax===nothing ? n + 10 : n
+  m = length(realobs(F))
+  for combo in combos_below(m, n)
+    push!(unchased, init_premodel(db, F, combo))
+  end
+  seen = get_seen(db, F)
+  while !isempty(unchased)
+    println("# unchased: $(length(unchased))")
+    mdl = pop!(unchased)
+    msize = SQLite.getvalue(execute(db,
+      "SELECT size FROM Premodel WHERE Premodel_id=?",[mdl]), 1, Int)
+    println("chasing $mdl with size $msize")
+    Ks, Ms = chasestep_db(db, F, mdl)
+    function getidsize(x::Int)::Pair{UInt64, Int}
+      z = execute(db, "SELECT hash,size FROM Premodel WHERE Premodel_id=?",[x])
+      return SQLite.getvalue(z,1,Int) => SQLite.getvalue(z,2,Int)
+    end
+    filter!(k->let (i,s)=getidsize(k); i ∉ seen && (s < nmax) end, Ks)
+
+    union!(seen, Ks)
+    union!(unchased, Ks)
+    union!(res, Ms)
   end
   return res
 end
@@ -107,7 +177,7 @@ function cone_query(c::Cone)::StructACSet
     push!(bodstr, "$e(src_$e=x$s, tgt_$e=x$t)")
   end
   push!(bodstr, "end")
-  exstr = "($(join(["$v=x$k" for vs in values(vars) for (k,v) in c.legs],",") ))"
+  exstr = "($(join(["$(v)_$i=x$k" for vs in values(vars) for (i, (k,v)) in enumerate(c.legs)],",") ))"
   ctxstr = "($(join(vcat(["x$i::$x" for (i, x) in enumerate(c.d[:vlabel])],),",")))"
   ex  = Meta.parse(exstr)
   ctx = Meta.parse(ctxstr)
@@ -121,29 +191,35 @@ end
 """
 Action αlim: add new elements OR quotient due to cones. Modifies J.
 """
-function apply_cones!(F::FLS, J::StructACSet)::EqClass
+function apply_cones!(F::FLS, J::StructACSet)::Pair{EqClass, Bool}
   eqclasses = EqClass([o=>IntDisjointSets(nparts(J, o))
                       for o in F.schema[:vlabel]])
-
+  changed, verbose = false, false
   newstuff = []
   for cone in F.cones # could be done in parallel
-    cones = Dict()
+    cones = Dict{Vector{Int},Int}()
     # precompute existing cones
     for i in parts(J, cone.apex)
-      v = [only(incident(J, i, add_srctgt(e)[1])) for e in values(cone.legs)]
+      v = [only(incident(J, i, add_srctgt(e)[1])) for (_,e) in cone.legs]
       if haskey(cones, v)
+        changed = true
+        println("don't expect this to ever happen but hey")
         union!(eqclasses[cone.apex], i, cones[v])
       else
         cones[v] = i
       end
     end
-
+    if verbose && !isempty(cones) println("preexisting cones $(cones)") end
     # look for instances of the pattern (TODO cached version / only considered 'added' information)
     for res in query(J, cone_query(cone)) # rely on order by same as order when precomputing
-      if !haskey(collect(res), cones)
+      resv = Vector{Int}(collect(res))
+      if verbose println("res $resv $(collect(keys(cones)))") end
+      if !haskey(cones, resv)
+        if verbose println("is new") end
+        changed = true
         newapex = add_part!(J, cone.apex)
         push!(eqclasses[cone.apex])
-        for (val, e) in zip(res,values(cone.legs))
+        for (val, (_, e)) in zip(res,cone.legs)
           s,t = add_srctgt(e)
           push!(newstuff, e=>Dict([s=>newapex, t=>val]))
         end
@@ -153,7 +229,7 @@ function apply_cones!(F::FLS, J::StructACSet)::EqClass
   for (e, d) in newstuff
     add_part!(J, e; d...)
   end
-  return eqclasses
+  return eqclasses => changed
 end
 
 
@@ -177,8 +253,8 @@ function eval_path(pth::Vector{Symbol}, J::StructACSet, xs::Set{Int})::Set{Int}
 end
 
 """Modifies eq"""
-function apply_egds!(F::FLS, J::StructACSet, eqclasses::EqClass)
-  verbose = true
+function apply_egds!(F::FLS, J::StructACSet, eqclasses::EqClass)::Bool
+  verbose,changed = false, false
   # Action βd: add all coincidences induced by D (i.e. fire EGDs)
   for (p, q) in F.eqs # could be done in parallel
     root = F.schema[:vlabel][F.schema[:src][
@@ -189,6 +265,7 @@ function apply_egds!(F::FLS, J::StructACSet, eqclasses::EqClass)
       for px in eval_path(p, J, Set([x]))
         for qx in (isempty(q) ? [x] : eval_path(q, J, Set([x])))
           union!(eqclasses[tail], px, qx)
+          changed |= px != qx
           if verbose && px != qx
             println("βF: $p=$q MERGED $tail $px = $qx")
           end
@@ -205,6 +282,7 @@ function apply_egds!(F::FLS, J::StructACSet, eqclasses::EqClass)
     for x in parts(J, ddom)
       eq_ys = collect(Set(J[dtgt][incident(J, x, dsrc)]))
       for (y1, y2) in zip(eq_ys, eq_ys[2:end])
+        changed |= true
         union!(eqclasses[dcodom], y1, y2)
         if verbose
           println("δ: $d($ddom#$x) MERGED $dcodom $y1 = $y2")
@@ -212,27 +290,29 @@ function apply_egds!(F::FLS, J::StructACSet, eqclasses::EqClass)
       end
     end
   end
+  return changed
 end
 
 """
 Action γ: merge coincidentally equal elements. Modifies J.
 """
 function merge!(F::FLS, J::StructACSet, eqclasses::EqClass)::Nothing
-  verbose=true
+  verbose=false
   μ = Dict{Symbol, Vector{Pair{Int,Int}}}([o=>Pair{Int,Int}[] for o in F.schema[:vlabel]])
   delob = Dict{Symbol, Vector{Int}}([o=>Int[] for o in F.schema[:vlabel]])
   for (o, eq) in pairs(eqclasses)
     eqsets = Dict{Int,Set{Int}}()
     # Recover the equivalence classes from the union-find structure
     for x in parts(J, o)
-    eqrep = find_root(eq, x)
-    if haskey(eqsets, eqrep)
-      push!(eqsets[eqrep], x)
-    else
-      eqsets[eqrep] = Set([x])
+      eqrep = find_root(eq, x)
+      if haskey(eqsets, eqrep)
+        push!(eqsets[eqrep], x)
+      else
+        eqsets[eqrep] = Set([x])
+      end
     end
-    end
-    if verbose
+    filter!(p->length(last(p))>1, eqsets)
+    if verbose && !isempty(eqsets)
       println("eqset $o $(values(eqsets))")
     end
     # Minimum element is the representative
