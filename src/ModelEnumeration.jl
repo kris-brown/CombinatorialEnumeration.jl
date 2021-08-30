@@ -46,7 +46,7 @@ function chasestep_db(db::SQLite.DB, F::FLS, i::Int
     modelchildren = (execute(db, """SELECT Premodel_id FROM Premodel JOIN Model
       USING (Premodel_id) WHERE Premodel_id IN ($(join(children, ",")))"""
       ) |> DataFrame)[!,:Premodel_id]
-    return setdiff(children, modelchildren),modelchildren
+    return setdiff(children, modelchildren) => modelchildren
   end
   m, I = get_premodel(db, i)
   xs, ys = chasestep(m, I)
@@ -188,9 +188,7 @@ function cone_query(c::Cone)::StructACSet
   return res
 end
 
-"""
-Action αlim: add new elements OR quotient due to cones. Modifies J.
-"""
+"""Add new elements OR quotient due to cones. Modifies J."""
 function apply_cones!(F::FLS, J::StructACSet)::Pair{EqClass, Bool}
   eqclasses = EqClass([o=>IntDisjointSets(nparts(J, o))
                       for o in F.schema[:vlabel]])
@@ -198,14 +196,14 @@ function apply_cones!(F::FLS, J::StructACSet)::Pair{EqClass, Bool}
   newstuff = []
   for cone in F.cones # could be done in parallel
     cones = Dict{Vector{Int},Int}()
+    ltgts = [J[add_srctgt(e)[2]] for (_, e) in cone.legs]
+    length(Set(collect(map(length, ltgts)))) == 1 || error(ltgts)
     # precompute existing cones
-    for i in parts(J, cone.apex)
-      v = [only(incident(J, i, add_srctgt(e)[1])) for (_,e) in cone.legs]
+    for (i, v) in enumerate(map(collect,zip(ltgts...)))
       if haskey(cones, v)
         changed = true
-        println("don't expect this to ever happen but hey")
         union!(eqclasses[cone.apex], i, cones[v])
-      else
+      elseif minimum(v) > 0
         cones[v] = i
       end
     end
@@ -227,6 +225,7 @@ function apply_cones!(F::FLS, J::StructACSet)::Pair{EqClass, Bool}
     end
   end
   for (e, d) in newstuff
+    if minimum(values(d)) == 0 println(newstuff ,J ) end
     add_part!(J, e; d...)
   end
   return eqclasses => changed
@@ -255,7 +254,7 @@ end
 """Modifies eq"""
 function apply_egds!(F::FLS, J::StructACSet, eqclasses::EqClass)::Bool
   verbose,changed = false, false
-  # Action βd: add all coincidences induced by D (i.e. fire EGDs)
+  # Path equalities
   for (p, q) in F.eqs # could be done in parallel
     root = F.schema[:vlabel][F.schema[:src][
       only(incident(F.schema, p[1], :elabel))]]
@@ -274,7 +273,7 @@ function apply_egds!(F::FLS, J::StructACSet, eqclasses::EqClass)::Bool
     end
   end
 
-  # Action δ: add all coincidences induced by functionality
+  # Functionality
   srcs, tgts = [F.schema[:vlabel][F.schema[x]] for x in [:src, :tgt]]
 
   for (d, ddom, dcodom) in zip(F.schema[:elabel], srcs, tgts) # could be done in parallel
@@ -293,9 +292,7 @@ function apply_egds!(F::FLS, J::StructACSet, eqclasses::EqClass)::Bool
   return changed
 end
 
-"""
-Action γ: merge coincidentally equal elements. Modifies J.
-"""
+"""Use equivalence class data to reduce size of model"""
 function merge!(F::FLS, J::StructACSet, eqclasses::EqClass)::Nothing
   verbose=false
   μ = Dict{Symbol, Vector{Pair{Int,Int}}}([o=>Pair{Int,Int}[] for o in F.schema[:vlabel]])

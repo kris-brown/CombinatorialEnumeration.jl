@@ -37,6 +37,14 @@ end
   schema::LabeledGraph
   cones::Vector{Cone}
   eqs::Vector{Pair{Vector{Symbol}, Vector{Symbol}}}
+  cset::Type
+  crel::Type
+  function FLS(name::Symbol, schema::LabeledGraph, cones::Vector{Cone},
+               eqs::Vector)
+      return new(name, schema, cones, eqs, grph_to_cset(name, schema),
+                 grph_to_crel(name, schema))
+  end
+
 end
 
 cone_to_dict(c::Cone) = Dict([
@@ -58,7 +66,10 @@ end
 
 add_srctgt(x::Symbol) = Symbol("src_$(x)") => Symbol("tgt_$(x)")
 
-function grph_to_crel(name::Symbol,fls::LabeledGraph)::StructACSet
+
+"""This should only be called inside constructing FLS ... move inside?"""
+function grph_to_crel(name::Symbol,fls::LabeledGraph)::Type
+  name_ = Symbol("rel_$name")
   pres = Presentation(FreeSchema)
   nv = length(fls[:vlabel])
   alledge = vcat([add_srctgt(e) for e in fls[:elabel]]...)
@@ -71,13 +82,13 @@ function grph_to_crel(name::Symbol,fls::LabeledGraph)::StructACSet
     add_generator!(pres, Hom(s, xobs[nv+i], xobs[src]))
     add_generator!(pres, Hom(t, xobs[nv+i], xobs[tgt]))
   end
-  name_ = Symbol("rel_$name")
   expr = struct_acset(name_, StructACSet, pres, index=alledge)
   eval(expr)
-  return Base.invokelatest(eval(name_))
+  return eval(name_)
 end
 
-function grph_to_cset(name::Symbol, fls::LabeledGraph)::StructACSet
+"""This should only be called inside constructing FLS ... move inside?"""
+function grph_to_cset(name::Symbol, fls::LabeledGraph)::Type
   pres = Presentation(FreeSchema)
   xobs = [Ob(FreeSchema, s) for s in fls[:vlabel]]
   for x in xobs
@@ -88,11 +99,11 @@ function grph_to_cset(name::Symbol, fls::LabeledGraph)::StructACSet
   end
   expr = struct_acset(name, StructACSet, pres, index=fls[:elabel])
   eval(expr)
-  return Base.invokelatest(eval(name))
+  return eval(name)
 end
 
-function crel_to_cset(F::FLS,J::StructACSet)
-  res = grph_to_cset(F.name, F.schema)
+function crel_to_cset(F::FLS, J::StructACSet)
+  res = F.cset() # grph_to_cset(F.name, F.schema)
   for o in F.schema[:vlabel]
     add_parts!(res, o, nparts(J, o))
   end
@@ -115,12 +126,12 @@ function initrel(F::FLS,
                  )::StructACSet
   if !(I isa StructACSet)
     dic = deepcopy(I)
-    I = grph_to_cset(F.name, F.schema)
+    I = F.cset() # grph_to_cset(F.name, F.schema)
     for (k, v) in (dic === nothing ? [] : collect(dic))
       add_parts!(I, k, v)
     end
   end
-  J = grph_to_crel(F.name, F.schema)
+  J = F.crel() # grph_to_crel(F.name, F.schema)
   # Initialize data in J from I
   for o in F.schema[:vlabel]
     add_parts!(J, o, nparts(I, o))

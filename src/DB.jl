@@ -59,6 +59,12 @@ function init_premodel(db::SQLite.DB, F::FLS, cards::Vector{Int})::Int
   length(syms) == length(cards) || error("bad length: cards $cards syms $syms")
   d = Dict(zip(syms, cards))
   dstr = string(sort(collect(d)))
+  r = SQLite.getvalue(execute(db, "SELECT Premodel_id FROM Init WHERE cards=?",
+                              [dstr]), 1, Int)
+  if r isa Int
+    return r
+  end
+
   i = add_premodel(db, F, initrel(F, d))
   execute(db, "INSERT INTO Init (cards, Premodel_id) VALUES (?,?)", [dstr,i])
   return i
@@ -102,8 +108,12 @@ function add_premodel(db::SQLite.DB, F::FLS, m::StructACSet,
   end
   # Add parents if any
   if parent isa Int
-    execute(db, "INSERT OR IGNORE INTO Parent(parent, child) VALUES(?, ?)",
-            [parent,r])
+    x =  SQLite.getvalue(execute(db,
+      "SELECT Parent_id FROM Parent WHERE parent=? AND child=?",
+      [parent,r]), 1, Int)
+    if !(x isa Int)
+      execute(db, "INSERT INTO Parent(parent, child) VALUES(?, ?)", [parent,r])
+    end
   end
   return r
 end
@@ -132,7 +142,7 @@ end
 function get_premodel(db::SQLite.DB, i::Int)::Pair{FLS, StructACSet}
   z = execute(db, "SELECT FLS.jdump AS f, Premodel.jdump as p FROM Premodel JOIN FLS USING (FLS_id) WHERE Premodel_id=?",[i])
   fls = fls_from_json(SQLite.getvalue(z,1,String))
-  crel_type = typeof(grph_to_crel(fls.name, fls.schema))
+  crel_type = eval(Symbol("rel_$(fls.name)"))
   crel = parse_json_acset(crel_type,SQLite.getvalue(z,2,String))
   return fls => crel
 end
