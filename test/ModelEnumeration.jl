@@ -1,5 +1,32 @@
 using Test
 include(joinpath(@__DIR__, "../src/ModelEnumeration.jl"))
+include(joinpath(@__DIR__, "../data/sketches/cat.jl"))
+
+F = catfls;
+
+# Chase below explicitly  # chase_below(db, catfls, 1)
+db = init_db(reset=false);
+
+# There is one empty model
+@test length(chase_below(db, catfls, 0)) == 1
+
+# There is no model with only one O+A, since each O needs an identity A.
+@test length(chase_below(db, catfls, 1)) == 1
+
+# There are two models of size at most 2. The empty model, and the model with
+# one (id) arrow and one object.
+ms_2 = chase_below(db, catfls, 2)
+@test length(ms_2) == 2
+ms_2_again = chase_below(db, catfls, 2) # now results are already in DB
+@test ms_2 == ms_2_again
+
+# category with one object = monoid. There are two addn'l monoids with 2 arrows.
+ms_3 = chase_below(db, catfls, 3)
+@test length(ms_3) == 4
+
+
+
+
 
 # Example from earlier
 if 1+1==1
@@ -31,19 +58,3 @@ end
 # e = apply_cones!(catfls, K)
 # apply_egds!(catfls, K, e)
 # Ks, Ms = chasestep(catfls, J)
-
-include(joinpath(@__DIR__, "../data/sketches/cat.jl"))
-
-# Chase below explicitly  # chase_below(db, catfls, 1)
-F,n,nmax, db = catfls, 1, 11, init_db("test.db"; rem=false)
-unchased, res, nmax  = Set{Int}(), Set{Int}(), nmax===nothing ? n + 10 : n
-m = length(realobs(F))
-
-chase_below(db, catfls, 1)
-
-
-# for combo in combos_below(m, n)
-#   println("COMBO $(Dict(zip(realobs(F),combo)))")
-#   push!(unchased, init_premodel(db, F, combo))
-# end
-# seen = get_seen(db, F)

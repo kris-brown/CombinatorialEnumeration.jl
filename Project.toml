@@ -6,4 +6,3 @@ version = "0.1.0"
 [deps]
 Catlab = "134e5e36-593f-5add-ad60-77f754baafbe"
 IterTools = "c8e1da08-722c-5040-9ed9-7db0dc04731e"
-SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"

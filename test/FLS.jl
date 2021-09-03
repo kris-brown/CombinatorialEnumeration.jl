@@ -12,3 +12,5 @@ xmod,xrel = fls.cset(), fls.crel()
 xmodrel = initrel(fls, xmod)
 @test crel_to_cset(fls, xmodrel) == xmod
 
+@test isempty(ChaseStepData())
+
