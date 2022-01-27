@@ -11,10 +11,11 @@ Reflexive: ∀x x≤x
 Antisymmetric: ∀xy x≤y ∧ y≤x → x=y
 Partial: Transitive ∧ Reflexive ∧ Antisymmetric;
 Linear (or total): Partial ∧ ∀xy x≤y ∨ y≤x
-
-  I ⇇ I×I
-    ↘  ⇈
-Cmp ⇉ Leq
+    π₁,π₂
+   I ⇇ I×I
+ refl ↘  ⇈ leq, geq
+Cmp ⇉  Leq
+  c1,c2
 """
 
 to_schema =  @acset LabeledGraph begin

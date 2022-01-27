@@ -114,13 +114,13 @@ function add_premodel(db::LibPQ.Connection, F::Sketch, m::StructACSet;
                       parent::Union{Int, Nothing}=nothing,
                       chash::Union{UInt64, Nothing}=nothing)::Int
   # println("\t adding premodel $m")
-  chash = chash === nothing ? canonical_hash(m; pres=F.crel_pres) : chash
+  chash = isnothing(chash) ? canonical_hash(m; pres=F.crel_pres) : chash
   # check if already in db
   r_ = columntable(execute(db,
     "SELECT Premodel_id FROM Premodel WHERE hash=\$1",[chash]))[:premodel_id]
   if isempty(r_)
     fid = add_sketch(db, F)
-    jsn = generate_json_acset(crel_to_cset(S, m)[1])
+    jsn = generate_json_acset(m)
     r, = columntable(execute(db,
       """INSERT INTO Premodel (hash, jdump, Sketch_id, size)
          VALUES (\$1,\$2, \$3, \$4) RETURNING Premodel_id""",
@@ -138,11 +138,10 @@ end
 
 """Add a premodel that is a model (if not already there). Return id"""
 function add_model(db::LibPQ.Connection, F::Sketch, relm::StructACSet,
-                   parent::Int,
+                   parent::Int;
                    relm_hsh::Union{UInt64, Nothing}=nothing)::Int
   m, partial = crel_to_cset(F, relm) # fail if nonfunctional
   !partial || error("adding a partial model")
-
   pid = add_premodel(db, F, relm; parent=parent, chash=relm_hsh)
 
   # check if already in db
@@ -173,8 +172,8 @@ function get_premodel(db::LibPQ.Connection, i::Int)::Pair{Sketch, StructACSet}
   z = columntable(execute(db, """SELECT Sketch.jdump AS f, Premodel.jdump as p
     FROM Premodel JOIN Sketch USING (Sketch_id) WHERE Premodel_id=\$1""",[i]))
   sketch = sketch_from_json(z[:f][1])
-  modl = parse_json_acset(sketch.cset, z[:p][1])
-  return sketch => modl
+  modl = parse_json_acset(sketch.crel, z[:p][1])
+  return sketch => crel_to_cset(sketch, modl)[1]
 end
 
 """Get Model by primary key ID"""
