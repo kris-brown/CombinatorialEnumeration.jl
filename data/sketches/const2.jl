@@ -1,4 +1,4 @@
-include(joinpath(@__DIR__, "../../src/FLS.jl"))
+include(joinpath(@__DIR__, "../../src/Sketch.jl"))
 
 """
 CONSTANTS
@@ -17,4 +17,4 @@ const2schema = @acset LabeledGraph begin
     tgt = [2,2]
 end
 
-const2 = FLS(:const2, const2schema, [Cone(c2d, s1,[])], [])
+const2 = Sketch(:const2, const2schema, [Cone(c2d, s1,[])], [])

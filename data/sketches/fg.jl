@@ -1,4 +1,4 @@
-include(joinpath(@__DIR__, "../../src/FLS.jl"))
+include(joinpath(@__DIR__, "../../src/Sketch.jl"))
 
 """
 LEFT INVERSE / INVOLUTION
@@ -21,6 +21,6 @@ fgschema = @acset LabeledGraph_{Symbol} begin
 end
 
 
-fg = FLS(:fg, fgschema,[], [
+fg = Sketch(:FG, fgschema, Cone[], Cone[], [
   (:fginv,      [:f, :g],    []),
   (:involution, [:inv,:inv], [])])

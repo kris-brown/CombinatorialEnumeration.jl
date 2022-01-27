@@ -176,7 +176,7 @@ o_a_assoc = Eq(:o_a_assoc, ma1, ma2);
 e2x = trim(@program(C, (x::X), let y=e(); (y, y, x) end), 2)
 rightinv = Eq(:rightinv, @program(C, (x::X), (e(),mul(x, inv(x)))), e2x, false);
 leftinv  = Eq(:leftinv,  @program(C, (x::X), (e(),mul(inv(x),x))), e2x, false);
-if 1+1==2
+
 posl = trim(@program(C, (x::X,y::X), [mul(x,y), e()]))
 posr = trim(@program(C, (x::X,y::X), [x, e(), y]))
 pos = Eq(:pos,  posl, posr, false)
@@ -394,5 +394,5 @@ T_crc  = union(T_smc,   Σ_crc, I_crc);
 T_dcr  = union(T_crc,   Σ_dcr, I_dcr);
 T_cc   = union(T_dcr,   Σ0,  I_cc)
 T_ccc  = union(T_cc,  Σ_ccc, I_ccc)
-end
+
 

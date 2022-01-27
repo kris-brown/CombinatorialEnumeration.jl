@@ -25,7 +25,7 @@ TBD
 - [x] Generate models of a theory by a variant of [the chase](https://en.wikipedia.org/wiki/Chase_(algorithm)) that deliberately produces models that are not initial.
 - [x] Store model progress in a Postgres database
 - [ ] Test properties of the various theories in the `data/sketches/` directory
-- [ ] Automatically convert the `EqTheories` (intuitively declarable through wiring diagrams from the `@program` macro, see `src/old/ATP/WD.jl`) into the finite limit theories of `src/FLS.jl`.
+- [ ] Automatically convert the `EqTheories` (intuitively declarable through wiring diagrams from the `@program` macro, see `src/old/ATP/WD.jl`) into the finite limit theories of `src/Sketch.jl`.
 - [ ] Use `@threads` to parallelize many parallelizable aspects of the code.
 - [ ] Apply known relationships between theories to reduce the computational burden. I.e. models of theory `T` that is just theory `V` with extra constraints can be found by filtering `V` models (if they were already computed). If theory `T` is the pushout of smaller theories `A` and `B`, then solve for the small models and take the join (in the SQL sense, joining on overlapping variables) of the two sets of models.
 - [ ] Friendly text-based API

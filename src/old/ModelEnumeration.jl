@@ -5,16 +5,18 @@ using DataStructures
 using IterTools
 using Combinatorics
 
-include(joinpath(@__DIR__, "FLS.jl"))
+include(joinpath(@__DIR__, "Sketch.jl"))
 include(joinpath(@__DIR__, "DB.jl"))
 
 const EqClass = Dict{Symbol, IntDisjointSets}
 const ACDict = Dict{UInt64, Pair{StructACSet, ChaseStepData}}
-
+const NewStuff = Vector{Pair{Symbol, Vector{Pair{Symbol, Int}}}}
+const UpdateStuff = Vector{Tuple{Symbol, Int, Vector{Pair{Symbol, Int}}}}
+const NewUpdate = Pair{NewStuff, UpdateStuff}
 """
-Do a chase step: cone gen then TGDs, EGDs for each branch
+Do a chase step: cone gen then TGDs, EGDs for each branch.
 """
-function chasestep(F::FLS, J::StructACSet)::Pair{ACDict, ACDict}
+function chasestep(F::Sketch, J::StructACSet)::Pair{ACDict, ACDict}
   verbose = true
   res, completed, srcs = ACDict(), ACDict(), F.schema[:vlabel][F.schema[:src]]
   #if verbose println("\tabout to add cones") end
@@ -30,13 +32,13 @@ function chasestep(F::FLS, J::StructACSet)::Pair{ACDict, ACDict}
     is_iso == isempty(csd) || error("iso csd $J \n$x \n$csd")
     if !is_iso
       if verbose println("\t$i/$n incomplete: hashing $(generate_json_acset(x))") end
-      xhsh = canonical_hash(x)
+      xhsh = canonical_hash(x; pres=F.crel_pres)
       if verbose println("\thashed!") end
       res[xhsh] = x => csd
     else
       !nontotal(F, x) || error("non total model")
       if verbose println("\t$i/$n complete! hashing $(generate_json_acset(x))") end
-      completed[canonical_hash(x)] = x => csd
+      completed[canonical_hash(x; pres=F.crel_pres)] = x => csd
     end
   end
 
@@ -48,7 +50,7 @@ Take a premodel from the DB and generate a set of models and premodels.
 Insert these results into the DB. Return the IDs of the resulting premodels and
 models.
 """
-function chasestep_db(db::LibPQ.Connection, F::FLS, i::Int
+function chasestep_db(db::LibPQ.Connection, F::Sketch, i::Int
                      )::Pair{Vector{Int}, Vector{Int}}
   # check if we've already chased before
   if columntable(execute(db, "SELECT fired FROM Premodel WHERE Premodel_id=\$1",
@@ -93,9 +95,9 @@ Do the first enumeration by incrementing n_nonzero and finding partitions so
 that ∑(c₁,...) = n_nonzero
 
 In the future, this function will write results to a database
-that hashes the FLS as well as the set of constants that generated the model.
+that hashes the Sketch as well as the set of constants that generated the model.
 
-Also crucial is to decompose FLS into subparts that can be efficiently solved
+Also crucial is to decompose Sketch into subparts that can be efficiently solved
 and have solutions stitched together.
 """
 function combos_below(m::Int, n::Int)::Vector{Vector{Int}}
@@ -119,7 +121,7 @@ function combos_below(m::Int, n::Int)::Vector{Vector{Int}}
   return sort(collect(res))
 end
 
-function nontotal(F::FLS, J::ACSet)::Bool
+function nontotal(F::Sketch, J::ACSet)::Bool
   for (src_i, e) in zip(F.schema[:src], F.schema[:elabel])
     srcobj, src = F.schema[:vlabel][src_i], add_srctgt(e)[1]
     missin = setdiff(parts(J, srcobj), J[src])
@@ -139,7 +141,8 @@ If true, the final list of models may be incomplete, but it could be more
 efficient if the goal of calling this function is merely to make sure all models
 are in the database itself.
 """
-function chase_below(db::LibPQ.Connection, F::FLS, n::Int; ignore_seen=false)::Vector{Int}
+function chase_below(db::LibPQ.Connection, F::Sketch, n::Int; ignore_seen=false
+                    )::Vector{Int}
   unchased, res  = Set{Int}(), Set{Int}()
   m = length(realobs(F))
   for combo in combos_below(m, n)
@@ -171,7 +174,7 @@ end
 Given a particular arrow and source for that arrow, find all targets (including
 "free" = 0 for nonlimit targets) that do not immediately violate path eqs.
 """
-function valid_poss(J::StructACSet, F::FLS, e::Symbol, x::Int)::Vector{Int}
+function valid_poss(J::StructACSet, F::Sketch, e::Symbol, x::Int)::Vector{Int}
   res = tgt(F, e) ∈ realobs(F) ? [0] : Int[]
   isempty(incident(J, x, add_srctgt(e)[1])) || error(
     "checking possiblities for something that's already determined")
@@ -216,8 +219,12 @@ Add new elements when a function is dangling. Fire TGDs in all possible ways
 (plus the 'free' way which uses fresh variables). This produces new premodels to
 chase.
 """
-function apply_tgds(F::FLS, J::StructACSet, csd::ChaseStepData
+function apply_tgds(F::Sketch, J::StructACSet, csd::ChaseStepData
                     )::Vector{Pair{StructACSet, ChaseStepData}}
+  verbose = true
+  if verbose
+    println("Apply TGDs w/ J $J\ncsd $csd")
+  end
   res = Pair{StructACSet, ChaseStepData}[]
   srcs, tgts = [F.schema[:vlabel][F.schema[x]] for x in [:src, :tgt]]
   # Calculate how many missing things we need of each type
@@ -232,7 +239,7 @@ function apply_tgds(F::FLS, J::StructACSet, csd::ChaseStepData
   if isempty(prod_args)
     return [J => csd]
   end
-  for (i, choice) in enumerate(IterTools.product(prod_args...))
+  for (_, choice) in enumerate(IterTools.product(prod_args...))
     Jc, Jcsd = deepcopy(J), deepcopy(csd)
     for (e, src, tgt, (_,_,eneed)) in zip(F.schema[:elabel], srcs, tgts, needs)
       esrc, etgt = add_srctgt(e)
@@ -264,63 +271,97 @@ function apply_tgds(F::FLS, J::StructACSet, csd::ChaseStepData
 end
 
 """
-Identify cones by their leg values. Multiple cones that share leg values are
-grouped together.
+Identify cones already identified in an ACSet (i.e. this function doesn't
+query). So we just look at the apex table for each cone. A cone with legs
+l₁...lₙ will return a map from the targets for each leg to the apex index.
+Because (for premodels) multiple elements in the apex object may have the same
+leg values, this is in general a map [Int] -> [Int].
 """
-function check_cones(F::FLS, J::StructACSet,
-                     eqclass::Union{Nothing, EqClass}=nothing
-                    )::Dict{Symbol, Dict{Vector{Int}, Vector{Int}}}
+function current_cones(F::Sketch, J::StructACSet,
+                       eqclass::Union{Nothing, EqClass}=nothing
+                       )::Dict{Symbol, Dict{Vector{Int}, Vector{Int}}}
   eqclasses = eqclass === nothing ? init_eq(F,J) : eqclass
-  return Dict([c.apex=>check_cone(F, J, c, eqclasses) for c in F.cones])
+  return Dict([c.apex=>current_cone(F, J, c, eqclasses) for c in F.cones])
 end
 
-function check_cone(F::FLS, J::StructACSet, cone::Cone, eqclass::EqClass
-                    )::Dict{Vector{Int}, Vector{Int}}
-  cones = DefaultDict{Vector{Int}, Vector{Int}}(Vector{Int})
-  ltgts = [map(i->find_root!(eqclass[tgt(F,e)],i), J[add_srctgt(e)[2]])
-           for (_, e) in cone.legs]
-  for (i, v) in enumerate(map(collect,zip(ltgts...)))
-    if minimum(v) > 0
-      push!(cones[v], i)
+"""Apply table-indexed equivalence relation to a vector of values (with an
+equal-length vector of tables)"""
+function eq_vec(eqclass::EqClass, tabs::Vector{Symbol}, inds::Vector{Int})
+  length(tabs) == length(inds) || error("eq_vec needs equal length tabs/inds")
+  [find_root!(eqclass[t], i) for (t, i) in zip(tabs, inds)]
+end
+
+"""
+Compute `current_cones` for a single cone
+
+Get the values for legs of each row of the apex (up to equivalence)
+Return map from row values to apex index value.
+"""
+function current_cone(F::Sketch, J::StructACSet, cone::Cone, eqclass::EqClass
+                     )::Dict{Vector{Int}, Vector{Int}}
+  res  = DefaultDict{Vector{Int}, Vector{Int}}(Vector{Int})
+  cols = [add_srctgt(e)[2] for e in last.(cone.legs)]
+  tgts = [tgt(F,e) for e in last.(cone.legs)]
+  coldata = [J[col] for col in cols]
+  for (apex_ind, row) in enumerate(zip(coldata))
+    if minimum(row) > 0
+      res[eq_vec(eqclass, tgts, row)] = apex_ind
     end
   end
-  return cones
+  return res
 end
 
 
-
-"""Add new elements required by cones. Modifies J."""
-function cone_gen(F::FLS, J_::StructACSet)
-  J = deepcopy(J_)
-  csd = ChaseStepData()
-
-  verbose = false
-  newstuff = Pair{Symbol, Vector{Pair{Symbol, Int}}}[]
-  conedata = check_cones(F, J)
-  for cone in F.cones # could be done in parallel
-    cones = conedata[cone.apex]
-    if verbose && !isempty(cones) println("preexisting cones $(cones)") end
-    # look for instances of the pattern (TODO cached version / only considered 'added' information)
-    for res in query(J, cone_query(cone)) # rely on order by same as order when precomputing
-      resv = Vector{Int}(collect(res))
-      if verbose println("res $res $resv") end
-      if !haskey(cones, resv)
-        if verbose println("$(cone.apex) is new w/ $(nparts(J, cone.apex))") end
-        newargs = [e=>val for (val, (_, e)) in zip(resv,cone.legs)]
-        push!(newstuff, cone.apex => newargs)
-      end
-    end
-  end
-  # Add to J
-  for (apex, args) in newstuff
+function add_new_stuff!(J::StructACSet, new_stuff::NewStuff)::Dict{Symbol, Vector{Int}}
+  res = DefaultDict{Symbol, Vector{Int}}(Int[])
+  for (apex, args) in new_stuff
     newapex = add_part!(J, apex)
-    push!(csd.cones[apex], newapex)
+    push!(res[apex], newapex)
     for (e, tgtval) in args
       s, t = add_srctgt(e)
       add_part!(J, e; Dict([s=>newapex, t=>tgtval])...)
     end
   end
-  return J, csd
+  return res
+end
+
+"""Modifies newstuff"""
+function cone_gen!(cone::Cone, J::StructACSet, newstuff::NewStuff)::Nothing
+  verbose = true
+  if verbose println("generating for cone $cone") end
+  cones = conedata[cone.apex]
+  if verbose && !isempty(cones) println("preexisting cones $(cones)") end
+  # look for instances of the pattern (TODO cached version / only considered 'added' information)
+  query_results = query(J, cone_query(cone))
+  if verbose
+    println("query_results $query_results")
+  end
+  for res in query_results # rely on order by same as order when precomputing
+    resv = Vector{Int}(collect(res))
+    if verbose println("res $res $resv") end
+    if !haskey(cones, resv)
+      if verbose println("$(cone.apex) is new w/ $(nparts(J, cone.apex))") end
+      newargs = [e=>val for (val, (_, e)) in zip(resv,cone.legs)]
+      push!(newstuff, cone.apex => newargs)
+    end
+  end
+end
+
+"""Add new elements required by cones. Modifies J."""
+function cones_gen(F::Sketch, J_::StructACSet)::Pair{StructACSet, ChaseStepData}
+  J = deepcopy(J_)
+  csd = ChaseStepData()
+  newstuff = Pair{Symbol, Vector{Pair{Symbol, Int}}}[]
+  conedata = current_cones(F, J) # no queries made yet
+  map(F.cones) do c cone_gen(c, J, newstuff) end
+  # Add to J
+  add_new_stuff!(J, newstuff)
+  for (apex, args) in newstuff
+    newapex = add_part!(J, apex)
+    push!(csd.cones[apex], newapex)
+  end
+
+  return J => csd
 end
 
 """
@@ -346,7 +387,7 @@ function eval_path(pth::Vector{Symbol}, J::StructACSet, xs::Set{Int})::Set{Int}
   return xs
 end
 
-function cone_eqs!(F::FLS, J::StructACSet,csd::ChaseStepData,eqclass::EqClass)::Nothing
+function cone_eqs!(F::Sketch, J::StructACSet,csd::ChaseStepData,eqclass::EqClass)::Nothing
   conedata = check_cones(F, J, eqclass)
   for cone in F.cones # could be done in parallel
     cones = conedata[cone.apex]
@@ -360,7 +401,7 @@ function cone_eqs!(F::FLS, J::StructACSet,csd::ChaseStepData,eqclass::EqClass)::
   end
 end
 
-function check_path_eq!(F::FLS, J::StructACSet,csd::ChaseStepData,eqclasses::EqClass, name::Symbol)::Nothing
+function check_path_eq!(F::Sketch, J::StructACSet,csd::ChaseStepData,eqclasses::EqClass, name::Symbol)::Nothing
   p, q = get_eq(F, name)
   eqc = eqclasses[tgt(F, p[end])]
   for x in parts(J, src(F, p[1]))
@@ -376,7 +417,7 @@ function check_path_eq!(F::FLS, J::StructACSet,csd::ChaseStepData,eqclasses::EqC
   end
 end
 
-function path_eqs!(F::FLS, J::StructACSet,csd::ChaseStepData,eqclasses::EqClass)::Nothing
+function path_eqs!(F::Sketch, J::StructACSet,csd::ChaseStepData,eqclasses::EqClass)::Nothing
   for (name, p, q) in F.eqs # could be done in parallel
     eqc = eqclasses[tgt(F, p[end])]
     for x in parts(J, src(F, p[1]))
@@ -396,7 +437,7 @@ end
 """
 Note which elements are equal due to relations actually representing functions
 """
-function fun_eqs!(F::FLS, J::StructACSet, csd::ChaseStepData, eqclass::EqClass
+function fun_eqs!(F::Sketch, J::StructACSet, csd::ChaseStepData, eqclass::EqClass
                  )::Nothing
   for d in F.schema[:elabel] # could be done in parallel
     dsrc, dtgt = add_srctgt(d)
@@ -415,9 +456,7 @@ function fun_eqs!(F::FLS, J::StructACSet, csd::ChaseStepData, eqclass::EqClass
   end
 end
 
-function init_eq(F::FLS, J::StructACSet)::EqClass
-  EqClass([o=>IntDisjointSets(nparts(J, o)) for o in F.schema[:vlabel]])
-end
+
 function same_eq_classes(x::IntDisjointSets,y::IntDisjointSets)::Bool
   length(x)==length(y) || error("same_eq_class called on different lengths")
   for i in 1:length(x)
@@ -431,7 +470,7 @@ function same_eq_classes(x::IntDisjointSets,y::IntDisjointSets)::Bool
 end
 
 """Modifies eq"""
-function apply_egds!(F::FLS, J::StructACSet,csd::ChaseStepData)::EqClass
+function apply_egds!(F::Sketch, J::StructACSet,csd::ChaseStepData)::EqClass
   # println("$i/$(length(ats)) applying egds to $(generate_json_acset(x))")
   eqclasses, changed = init_eq(F,J), true
   while changed
@@ -443,63 +482,5 @@ function apply_egds!(F::FLS, J::StructACSet,csd::ChaseStepData)::EqClass
                     for o in F.schema[:vlabel]])
   end
   return eqclasses
-end
-
-"""Use equivalence class data to reduce size of model"""
-function merge!(F::FLS, J::StructACSet, eqclasses::EqClass;
-                verbose::Bool=false)::Nothing
-
-  μ = Dict{Symbol, Vector{Pair{Int,Int}}}([
-    o=>Pair{Int,Int}[] for o in F.schema[:vlabel]])
-  delob = DefaultDict{Symbol, Vector{Int}}(Vector{Int})
-  for (o, eq) in pairs(eqclasses)
-    eqsets = Dict{Int,Set{Int}}()
-    # Recover the equivalence classes from the union-find structure
-    for x in parts(J, o)
-      eqrep = find_root(eq, x)
-      if haskey(eqsets, eqrep)
-        push!(eqsets[eqrep], x)
-      else
-        eqsets[eqrep] = Set([x])
-      end
-    end
-    filter!(p->length(last(p))>1, eqsets)
-    if verbose && !isempty(eqsets)
-      println("eqset $o $(values(eqsets))")
-    end
-    # Minimum element is the representative
-    for vs in map(collect,values(eqsets))
-      m = minimum(vs)
-      vs_ = [v for v in vs if v!=m]
-      append!(μ[o], [v=>m for v in vs_])
-      append!(delob[o], collect(vs_))
-    end
-  end
-
-  # Replace all instances of a class with its representative in J
-  for d in F.schema[:elabel] # could be done in parallel
-    dsrc, dtgt = add_srctgt(d)
-    isempty(μ[src(F, d)]) || set_subpart!(J, dsrc, replace(J[dsrc], μ[src(F, d)]...))
-    isempty(μ[tgt(F, d)]) || set_subpart!(J, dtgt, replace(J[dtgt], μ[tgt(F, d)]...))
-  end
-
-  for d in F.schema[:elabel] # could be done in parallel
-    dsrc, dtgt = add_srctgt(d)
-    # remove redundant duplicate relation rows
-    seen = Set{Tuple{Int,Int}}()
-
-    for (i, st) in enumerate(zip(J[dsrc], J[dtgt]))
-      if st ∈ seen
-        if verbose println("REMOVING $st #$i because in seen $seen") end
-        push!(delob[d], i)
-      else
-        if verbose println("$d adding $st because not in seen $seen") end
-        push!(seen, st)
-      end
-    end
-  end
-  for (o, vs) in collect(delob)
-    isempty(vs) || rem_parts!(J, o, sort(vs))
-  end
 end
 

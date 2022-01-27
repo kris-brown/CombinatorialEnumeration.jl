@@ -1,4 +1,4 @@
-include(joinpath(@__DIR__, "../../src/FLS.jl"))
+include(joinpath(@__DIR__, "../../src/Sketch.jl"))
 
 """
 3-ary Cartesian product
@@ -18,5 +18,5 @@ tripd = @acset LabeledGraph begin
     vlabel = [:s, :s, :s,]
 end
 
-trips = FLS(:trips, tripschema, [
+trips = Sketch(:trips, tripschema, [
     Cone(lconed, :s2, [1=>:p1,2=>:p2, 3=>:p3])], [])

@@ -8,8 +8,8 @@ end
     include("DB.jl")
 end
 
-@testset "FLS" begin
-    include("FLS.jl")
+@testset "Sketch" begin
+    include("Sketch.jl")
 end
 
 

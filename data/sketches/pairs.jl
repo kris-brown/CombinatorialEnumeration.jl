@@ -1,4 +1,4 @@
-include(joinpath(@__DIR__, "../../src/FLS.jl"))
+include(joinpath(@__DIR__, "../../src/Sketch.jl"))
 
 """
 Cartesian Product
@@ -18,5 +18,5 @@ paird= @acset LabeledGraph begin
     vlabel = [:s, :s]
 end
 
-pairs = FLS(:pairs, pairschema, [
+pairs = Sketch(:pairs, pairschema, [
     Cone(lconed, :s2, [1=>:p1,2=>:p2])], [])

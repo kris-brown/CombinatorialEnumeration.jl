@@ -1,4 +1,4 @@
-include(joinpath(@__DIR__, "../../src/FLS.jl"))
+include(joinpath(@__DIR__, "../../src/Sketch.jl"))
 
 ####################
 # REFLEXIVE GRAPHS #
@@ -6,14 +6,14 @@ include(joinpath(@__DIR__, "../../src/FLS.jl"))
 
 reflgraphschema = @acset LabeledGraph begin
     V = 2
-    E = 4
+    E = 3
     vlabel = [:V, :E]
-    elabel = [:id, :refl, :src, :tgt]
-    src = [1,1,2,2]
-    tgt = [1,2,1,1]
+    elabel = [:refl, :src, :tgt]
+    src    = [1,     2,    2]
+    tgt    = [2,     1,    1]
 end
 
 
-reflgraph = FLS(:reflgraph, reflgraphschema, [], [
+rgraph_sketch = Sketch(:reflgraph, reflgraphschema, Cone[], Cone[], [
     (:srcid, [:refl, :src], []),
     (:tgtid, [:refl, :tgt], [])])

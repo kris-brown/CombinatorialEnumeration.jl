@@ -1,4 +1,4 @@
-include(joinpath(@__DIR__, "FLS.jl"))
+include(joinpath(@__DIR__, "Sketch.jl"))
 using Base.Iterators: product as cartprod
 using Catlab.CategoricalAlgebra.FinSets: preimage
 

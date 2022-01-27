@@ -1,4 +1,4 @@
-include(joinpath(@__DIR__, "../../src/FLS.jl"))
+include(joinpath(@__DIR__, "../../src/Sketch.jl"))
 
 # Example: categories
 catschema = @acset LabeledGraph_{Symbol} begin
@@ -89,11 +89,11 @@ cateqs = [
   (:l2c3, [:l2,:c3], [:asc, :r1, :c3])
 ]
 
-catfls = FLS(:catt, catschema, catcones, cateqs);
+catsketch = Sketch(:catt, catschema, catcones, Cone[], cateqs);
 
 
 
-cata2o1 = catfls.cset()
+cata2o1 = catsketch.cset()
 add_parts!(cata2o1, :O, 1)
 add_parts!(cata2o1, :A, 2, src=[1,1], tgt=[1,1])
 set_subpart!(cata2o1, 1, :refl, 1)
@@ -114,4 +114,4 @@ add_parts!(cata2o1, :asc_l, 8, l1= [1,1,2,2,3,3,4,4],
                                 asc=[1,2,3,4,5,6,7,8]) # needs to be fixed.
 add_parts!(cata2o1, :leftid, 2, lidv= [1,1], lida=[1,1], lidc=[1,2])
 add_parts!(cata2o1, :rightid, 2, ridv= [1,1], rida=[1,1], ridc=[1,3]);
-a2o1 = initrel(catfls, cata2o1);
+a2o1 = initrel(catsketch, cata2o1);

@@ -1,4 +1,4 @@
-include(joinpath(@__DIR__, "../../src/FLS.jl"))
+include(joinpath(@__DIR__, "../../src/Sketch.jl"))
 
 """
 Permutations of a set, i.e. invertible endo-functions.
@@ -12,4 +12,4 @@ permschema = @acset LabeledGraph begin
     tgt = [1,1]
 end
 
-perm = FLS(:perm, permschema, [], [(:inv, [:f, :f⁻¹], [])])
+perm = Sketch(:perm, permschema, [], [(:inv, [:f, :f⁻¹], [])])

@@ -1,12 +1,12 @@
 include(joinpath(@__DIR__, "../src/DB.jl"))
-include(joinpath(@__DIR__, "FLS.jl"))
+include(joinpath(@__DIR__, "Sketch.jl"))
 
 db = init_db(reset=true)
-@test add_fls(db, fls) == 1
-@test get_fls(db, 1) == fls
+@test add_sketch(db, fg) == 1
+@test get_sketch(db, 1) == fg
 
-@test add_fls(db, fls) == 1 # does not insert again
+@test add_sketch(db, fg) == 1 # does not insert again
 
 
-@test add_premodel(db, fls, xrel) == 1
-@test get_premodel(db, 1) == (fls => xrel)
+@test add_premodel(db, fg, xrel) == 1
+@test get_premodel(db, 1) == (fg => xrel)

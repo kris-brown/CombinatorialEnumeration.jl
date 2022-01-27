@@ -1,11 +1,11 @@
-include(joinpath(@__DIR__, "../../src/FLS.jl"))
+include(joinpath(@__DIR__, "../../src/Sketch.jl"))
 
 """
 Semigroups.
 """
 
 p1p2, p2p3, idk, kid = map(Symbol, ["π₁×π₂","π₂×π₃","id×k","k×id"])
-semig = FLSinit(@acset LabeledGraph begin
+semig = Sketchinit(@acset LabeledGraph begin
     V = 3
     E = 10
     vlabel = [:s, :s2, :s3]
@@ -45,4 +45,4 @@ semieqs = [
 
     (:assoc, [idk, :k], [kid,:k]),
 ]
-semig = FLS(:semig, semigschema, semigcones, semigeqs);
+semig = Sketch(:semig, semigschema, semigcones, semigeqs);

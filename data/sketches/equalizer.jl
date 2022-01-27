@@ -1,4 +1,4 @@
-include(joinpath(@__DIR__, "../../src/FLS.jl"))
+include(joinpath(@__DIR__, "../../src/Sketch.jl"))
 
 fxb = Symbol("f×ᵦg")
 
@@ -21,5 +21,5 @@ eqconed = @acset LabeledGraph begin
 end
 
 
-eqfls = FLS(:equalizer, eqschema, [
+eqsketch = Sketch(:equalizer, eqschema, [
     Cone(eqconed, fxb, [1=>:π1,2=>:π2])], []);

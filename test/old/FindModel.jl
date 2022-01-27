@@ -1,5 +1,5 @@
 include(joinpath(@__DIR__, "../../src/sketches/FindModel.jl"))
-include(joinpath(@__DIR__, "FLS.jl"))  # where the sketches are defined
+include(joinpath(@__DIR__, "Sketch.jl"))  # where the sketches are defined
 
 using Test
 using Catlab.CategoricalAlgebra

@@ -1,4 +1,3 @@
-include("/Users/ksb/Catlab.jl/src/atp/Chase.jl")
 
 sch = Schema(Dict(:R=>2, :A=>1))
 _, Isch = schema_to_csettype(sch)
