@@ -1,14 +1,19 @@
-using Catlab.Present
-using Catlab.Graphs
+module Sketches
+export Sketch, LabeledGraph, Cone, dual, cone_query, free_obs, relsize,
+       sketch_from_json, to_json, add_srctgt, sizes, zero_ob, one_ob, free_homs,
+       constr_homs
+
+"""Basic data structures for limit sketches"""
+
+using Catlab.Present, Catlab.Graphs, Catlab.Theories, Catlab.CategoricalAlgebra
+using Catlab.Graphs.BasicGraphs: TheoryGraph
+using Catlab.CategoricalAlgebra.CSetDataStructures: struct_acset
+import Catlab.Graphs: src, tgt
+using CSetAutomorphisms
+
 using JSON
 using AutoHashEquals
 using DataStructures: DefaultDict
-
-using Catlab.Graphs.BasicGraphs: TheoryGraph
-using Catlab.Theories
-using Catlab.CategoricalAlgebra
-using Catlab.CategoricalAlgebra.CSetDataStructures: struct_acset
-
 import Base: isempty
 
 """Edges and vertices labeled by symbols"""
@@ -151,37 +156,30 @@ representing premodels, which may not satisfy equations/(co)limit constraints)
   end
 end
 
-"""
-Cones - cone apex elements added due to querying the instance
-"""
-@auto_hash_equals struct ChaseStepData
-  cones::DefaultDict{Symbol, Vector{Int}}
-  cocones::DefaultDict{Symbol, Vector{Int}}
-  tgds::DefaultDict{Symbol, Vector{Pair{Int, Int}}}
-  path_eqs::DefaultDict{Symbol, Vector{Pair{Int, Int}}}
-  fun_eqs::DefaultDict{Symbol, Vector{Vector{Int}}}
-  cone_eqs::DefaultDict{Symbol, Vector{Vector{Int}}}
-  function ChaseStepData()
-    return new(
-      DefaultDict{Symbol, Vector{Int}}(Vector{Int}),
-      DefaultDict{Symbol, Vector{Int}}(Vector{Int}),
-      DefaultDict{Symbol, Vector{Pair{Int,Int}}}(Vector{Pair{Int,Int}}),
-      DefaultDict{Symbol, Vector{Pair{Int,Int}}}(Vector{Pair{Int,Int}}),
-      DefaultDict{Symbol, Vector{Vector{Int}}}(Vector{Vector{Int}}),
-      DefaultDict{Symbol, Vector{Vector{Int}}}(Vector{Vector{Int}}))
-  end
+"""Dual sketch. Optionally rename obs/morphisms and the sketch itself"""
+function dual(s::Sketch, n::Symbol=Symbol(),
+     obs::Vector{Pair{Symbol, Symbol}}=Pair{Symbol, Symbol}[])
+  d = Dict(obs)
+  eqsub = ps -> reverse([get(d, p, p) for p in ps])
+  Sketch(isempty(string(n)) ? Symbol("$(s.name)"*"_dual") : n,
+         dualgraph(s.schema, d), [dual(c, d) for c in s.cocones],
+         [dual(c,d) for c in s.cones],
+         [(n, eqsub(p), eqsub(q)) for (n, p, q) in s.eqs])
 end
 
-isempty(c::ChaseStepData) = all(map(isempty, [
-  c.cones, c.cocones, c.tgds, c.path_eqs, c.fun_eqs, c.cone_eqs]))
+dual(c::Cone, obs::Dict{Symbol, Symbol}) =
+  Cone(dualgraph(c.d, obs), get(obs,c.apex,c.apex),
+       [(i => get(obs, x, x)) for (i, x) in c.legs])
 
-csd_to_dict(csd::ChaseStepData) = Dict([
-  "cones"=>Dict([string(k)=>v for (k,v) in collect(csd.cones)]),
-  "cocones"=>Dict([string(k)=>v for (k,v) in collect(csd.cocones)]),
-  "tgds" =>Dict([string(k)=>v for (k,v) in csd.tgds]),
-  "path_eqs"=>Dict([string(k)=>v for (k,v) in csd.path_eqs]),
-  "fun_eqs"=>Dict([string(k)=>collect(v) for (k,v) in csd.fun_eqs]),
-  "cone_eqs"=>Dict([string(k)=>collect(v) for (k,v) in csd.cone_eqs])])
+
+function dualgraph(lg::LabeledGraph, obd::Dict{Symbol, Symbol})
+  g = deepcopy(lg)
+  set_subpart!(g, :src, lg[:tgt])
+  set_subpart!(g, :tgt, lg[:src])
+  set_subpart!(g, :vlabel, replace(z->get(obd, z, z), g[:vlabel]))
+  set_subpart!(g, :elabel, replace(z->get(obd, z, z), g[:elabel]))
+  return g
+end
 
 src(S::Sketch, e::Symbol) = S.schema[:vlabel][S.schema[:src][
   only(incident(S.schema, e, :elabel))]]
@@ -215,17 +213,28 @@ end
 
 add_srctgt(x::Symbol) = Symbol("src_$(x)") => Symbol("tgt_$(x)")
 
-function realobs(S::Sketch)::Set{Symbol}
-  return setdiff(Set(S.schema[:vlabel]),
-                 [c.apex for c in vcat(S.cones, S.cocones)])
+function free_obs(S::Sketch)::Set{Symbol}
+  setdiff(Set(S.schema[:vlabel]), [c.apex for c in vcat(S.cones, S.cocones)])
+end
+
+function free_homs(S::Sketch)::Set{Symbol}
+  free_ob = free_obs(S)
+  homs = [S.schema[e, :elabel] => S.schema[e, [:src, :vlabel]]
+          for e in parts(S.schema, :E)]
+  Set([e for (e, s) in homs if s ∈ free_ob])
+end
+
+function constr_homs(S::Sketch)::Set{Symbol}
+  leg_homs = Set(last.(vcat([c.legs for c in vcat(S.cones,S.cocones)]...)))
+  setdiff(Set(S.schema[:elabel]), free_homs(S) ∪ leg_homs)
 end
 
 function relsize(S::Sketch, I::StructACSet)::Int
-  return sum([nparts(I, x) for x in realobs(S)])
+  return sum([nparts(I, x) for x in free_obs(S)])
 end
 
 function sizes(S::Sketch, I::StructACSet; real::Bool=false)::String
-  obs = sort(real ? collect(realobs(S)) : S.schema[:vlabel])
+  obs = sort(real ? collect(free_obs(S)) : S.schema[:vlabel])
   join(["$o: $(nparts(I, o))" for o in obs],", ")
 end
 
@@ -233,29 +242,36 @@ function get_eq(S::Sketch,name::Symbol)::Pair{Vector{Symbol}, Vector{Symbol}}
   return only([p=>q for (n,p,q) in S.eqs if n==name])
 end
 
-"""
-Query that returns all instances of the base pattern. External variables
-are labeled by the legs of the cone.
-"""
-function cone_query(c::Cone)::StructACSet
-  vars = [Symbol("x$i") for i in nparts(c.d, :V)]
-  typs = ["$x(_id=x$i)" for (i, x) in enumerate(c.d[:vlabel])]
-  bodstr = vcat(["begin"], typs)
-  for (e, s, t) in zip(c.d[:elabel], c.d[:src], c.d[:tgt])
-    push!(bodstr, "$e(src_$e=x$s, tgt_$e=x$t)")
-  end
-  push!(bodstr, "end")
-  exstr = "($(join(["$(v)_$i=x$k" for vs in values(vars)
-                    for (i, (k,v)) in enumerate(c.legs)],",") ))"
-  ctxstr = "($(join(vcat(["x$i::$x"
-                          for (i, x) in enumerate(c.d[:vlabel])],),",")))"
-  ex  = Meta.parse(exstr)
-  ctx = Meta.parse(ctxstr)
-  hed = Expr(:where, ex, ctx)
-  bod = Meta.parse(join(bodstr, "\n"))
-  if false
-    println("ex $exstr\n ctx $ctxstr\n bod $(join(bodstr, "\n"))")
-  end
-  res = parse_relation_diagram(hed, bod)
-  return res
-end
+
+zero_ob(S::Sketch) = [c.apex for c in S.cocones if nv(c.d) == 0]
+one_ob(S::Sketch) = [c.apex for c in S.cones if nv(c.d) == 0]
+
+end # module
+
+
+# """
+# Query that returns all instances of the base pattern. External variables
+# are labeled by the legs of the cone.
+# """
+# function cone_query(c::Cone)::StructACSet
+#   vars = [Symbol("x$i") for i in nparts(c.d, :V)]
+#   typs = ["$x(_id=x$i)" for (i, x) in enumerate(c.d[:vlabel])]
+#   bodstr = vcat(["begin"], typs)
+#   for (e, s, t) in zip(c.d[:elabel], c.d[:src], c.d[:tgt])
+#     push!(bodstr, "$e(src_$e=x$s, tgt_$e=x$t)")
+#   end
+#   push!(bodstr, "end")
+#   exstr = "($(join(["$(v)_$i=x$k" for vs in values(vars)
+#                     for (i, (k,v)) in enumerate(c.legs)],",") ))"
+#   ctxstr = "($(join(vcat(["x$i::$x"
+#                           for (i, x) in enumerate(c.d[:vlabel])],),",")))"
+#   ex  = Meta.parse(exstr)
+#   ctx = Meta.parse(ctxstr)
+#   hed = Expr(:where, ex, ctx)
+#   bod = Meta.parse(join(bodstr, "\n"))
+#   if false
+#     println("ex $exstr\n ctx $ctxstr\n bod $(join(bodstr, "\n"))")
+#   end
+#   res = parse_relation_diagram(hed, bod)
+#   return res
+# end

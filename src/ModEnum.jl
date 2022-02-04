@@ -1,10 +1,16 @@
-include(joinpath(@__DIR__, "Sketch.jl"))
-include(joinpath(@__DIR__, "DB.jl"))
-include(joinpath(@__DIR__, "Models.jl"))
+module ModEnum
+export chase_step, chase_step_db, chase_set
 
+using ..Sketches
+using ..DB
+using ..Models
+using ..Limits
+
+using Catlab.WiringDiagrams, Catlab.CategoricalAlgebra
 using Catlab.Programs.RelationalPrograms: parse_relation_diagram
-using Catlab.WiringDiagrams
 using Combinatorics
+using DataStructures
+using LibPQ, Tables
 
 """
 parallelize by adding Threads.@threads before a for loop. Hard to do w/o
@@ -22,9 +28,6 @@ const rigid = true
 
 # Type synonyms
 ###############
-const ACDict = Dict{UInt64, Pair{StructACSet, ChaseStepData}}
-const LoneCones = Dict{Symbol,Set{Int}}
-const Weights = DefaultDict{Pair{Symbol, Int}, Float64}
 const Poss = Tuple{Symbol, Int, Modify}
 struct Branch
   branch::Symbol     # either a morphism or a cocone apex
@@ -47,44 +50,71 @@ function chase_step(S::Sketch, J::StructACSet
                     )::Union{Nothing,Pair{StructACSet,Branch}}
   # Initialize variables
   verbose = false
-  J = deepcopy(J)
-  m, lc, w = Modify(), LoneCones(), Weights(()->0)
-  cnt = 0
+  fail, J = handle_zero_one(S, J) # doesn't modify J
+  if fail return nothing end
+
+  ns, lc, w = NewStuff(), LoneCones(), Weights(() -> 0)
 
   # this loop might not be necessary. If one pass is basically all that's
   # needed, then this loop forces us to run 2x loops
-  while true
-    cnt+=1
-    pi_res = propagate_info(S, J)
-    if isnothing(pi_res) return nothing end
-    J_new, m_new, lc_new, w_new = pi_res
-    # println("NEW LC $new_lc\n$(isempty(m_old)) $(m_new==m) && $(new_lc==lc) && $(eqclass_eq(new_eq, eq))")
-    should_break = (J==J_new) && (m_new==m) && (lc_new==lc)
-    J, m, lc, w = (J_new, m_new, lc_new, w_new) # overwrite
-    if should_break
-      break # exit loop once we have no more changes
-    end
-    if cnt > 1 println("\tchase step, finished loop iter #$cnt") end
+  for cnt in Iterators.countfrom()
+    if cnt > 1 println("\tchase step iter #$cnt") end
+    if cnt > 3 error("TOO MANY ITERATIONS") end
+    changed, failed, J, ns, lc, w = propagate_info(S, J, ns)
+    if failed return nothing end
+    if !changed break end
   end
 
   # add new things that make J bigger
-  J_res = update_crel(J, m)
+  update_crel!(J, ns)
+  if verbose println("adding to J $J \n ns $ns") end
+  crel_to_cset(S, J)
   if verbose
-    println("J Res "); show(stdout, "text/plain", crel_to_cset(S, J_res)[1])
+    println("J Res "); show(stdout, "text/plain", crel_to_cset(S, J)[1])
   end
+  fail, J = handle_zero_one(S, J) # doesn't modify J
+  if fail return nothing end
+  free_poss, constr_poss, or_poss = get_possibilities(S, J, lc)
+  lfree, lconstr, lor = length.([free_poss, constr_poss, or_poss])
 
-  poss = filter(b->!isempty(b.poss), get_possibilities(S, J_res, lc))
-  if verbose println("$(length(poss)) possibilities \nw $w") end
-  if isempty(poss)
-    return J_res => b_success
+  # Metric for undesirability of a branch
+  #bf = b->w[b.branch => b.val]/(2*length(b.poss))
+  bf = b->(length(b.poss), -w[b.branch => b.val])
+
+  if verbose println("$(lfree) free, $lconstr constr, $lor or") end
+  if (lfree + lconstr + lor) == 0
+    return J => b_success
+  elseif lfree > 0
+    return J => first(sort(free_poss, by=bf))
+  elseif lor > 0
+    return J => first(sort(or_poss, by=bf))
   else
-    #bf = b->w[b.branch => b.val]/(2*length(b.poss))
-    bf = b->(length(b.poss), -w[b.branch => b.val])
-    branches = sort(poss, by=bf)
-    return J_res => first(branches)
+    return J => first(sort(constr_poss, by=bf))
   end
 end
 
+"""Set cardinalities of 0 and 1 objects correctly + maps into 1"""
+function handle_zero_one(S::Sketch, J::StructACSet)::Pair{Bool,StructACSet}
+  J = deepcopy(J)
+  eq = init_eq(S, J)
+
+  for t1 in one_ob(S)
+    unions!(eq[t1], collect(parts(J, t1)))
+    if nparts(J, t1) == 0
+      add_part!(J, t1)
+    end
+    for e in filter(e->tgt(S,e)==t1, S.schema[:elabel])
+      [add_rel!(J, e, i, 1) for i in parts(J, src(S, e))]
+    end
+  end
+  merge!(S, J, eq)
+  for t0 in zero_ob(S)
+    if nparts(J, t0) > 0
+      return true => J
+    end
+  end
+  return false => J
+end
 
 """
 Use path equalities, functionality of FK relations, cone/cocone constraints to
@@ -92,35 +122,43 @@ generate new data and to quotient existing data. Separate information that can
 be safely applied within a while loop (i.e. everything except for things
 related to newly added elements).
 """
-function propagate_info(S::Sketch, J::StructACSet
-                        )::Union{Nothing,
-                                 Tuple{StructACSet, Modify, LoneCones, Weights}}
-  verbose = false
+function propagate_info(S::Sketch, J::StructACSet, ns::NewStuff
+          )::Tuple{Bool, Bool, StructACSet, NewStuff, LoneCones, Weights}
+  verbose, changed = true, false
   eq = init_eq(S, J) # trivial equivalence classes
   w = Weights(()->.0) # initial weighting
-  if path_eqs!(S,J,eq,w)
-    return nothing
+  if verbose println("STARTING PROPAGATE INFO WITH NS $ns and $(eq[:I])")
+    if verbose show(stdout, "text/plain", crel_to_cset(S, J)[1]) end
   end
+  # Path Eqs
+  pchanged, pfail = path_eqs!(S,J,eq,w)
+  if verbose println("\tpchanged $pchanged: $(sizes(S, J)) $(eq[:I])") end
+  changed |= pchanged
+  if pfail return (changed, true, J, NewStuff(), LoneCones(), w) end
 
-  cdata = compute_cones!(S, J, eq, w)
-  if isnothing(cdata) return nothing end
-  if verbose println("cdata $cdata") end
+  # Cones
+  cchanged, cfail = compute_cones!(S, J, eq, ns, w)
+  if verbose println("\tcchanged $cchanged $(sizes(S, J)) $(eq[:I])") end
+  changed |= cchanged
+  if cfail return (changed, true, J, NewStuff(), LoneCones(), w) end
+  if verbose println("ns $ns") end
 
-  # Compute cocones, which has possibility of immediately failing
-  cocone_res = compute_cocones!(S, J, eq, w)
-  if isnothing(cocone_res) return nothing end
-  ccdata, lone_cones = cocone_res
-  m = union(S, J, cdata, ccdata)
+  # Cocones
+  cochanged, cfail, lone_cones = compute_cocones!(S, J, eq, ns, w)
+  if verbose println("\tcochanged $cochanged: $(sizes(S, J)) $(eq[:I])") end
+  changed |= cochanged
+  if cfail return (changed, true, J, NewStuff(), LoneCones(), w) end
 
   # because this is at the end, chased premodels should be functional
-  if fun_eqs!(S,J,eq)
-    return nothing
-  end
+  fchanged, ffail, ns = fun_eqs!(S, J, ns, eq)
+  if verbose println("\tfchanged $fchanged: $(sizes(S, J))") end
+  changed |= fchanged
+  if ffail return (changed, true, J, NewStuff(), LoneCones(), w) end
+  cs = crel_to_cset(S, J) # will trigger a fail if it's nonfunctional
+  if verbose show(stdout, "text/plain", cs[1]) end
+  if verbose println("\tENDING ns $(ns.ns[:II])") end
 
-  merge!(S, J, eq)
-  crel_to_cset(S, J) # fail if it's nonfunctional
-
-  return (J, m, lone_cones, w)
+  return (changed, false, J, ns, lone_cones, w)
 end
 
 """
@@ -135,31 +173,35 @@ possibility; but the pair of them has two possibilities (both map to fresh b₁,
 or map to fresh b₁ and b₂).
 """
 function get_possibilities(S::Sketch, J::StructACSet, lc::LoneCones
-                           )::Vector{Branch}
-  res = Branch[]
-  cols = [:elabel, [:src, :vlabel], [:tgt, :vlabel]]
+                          )::Tuple{Vector{Branch},Vector{Branch},Vector{Branch}}
+  free_poss, constr_poss, or_poss = [Branch[] for _ in 1:3]
+  z1 = zero_ob(S) ∪ one_ob(S)
   # Dangling foreign keys ('tuple generating dependencies')
-  for (e, src_tab, tgt_tab) in zip([S.schema[x] for x in cols]...)
-    esrc, _ = add_srctgt(e)
-    unmatched = setdiff(parts(J,src_tab), J[esrc])
-    for u in unmatched
-      # possibilities of setting `u`'s value of FK `e`
-      subres = Poss[]
+  for (e_list, poss_list) in [free_homs(S)=>free_poss,
+                              constr_homs(S)=>constr_poss]
+    for e in e_list
+      src_tab, tgt_tab = src(S,e), tgt(S,e)
+      esrc, _ = add_srctgt(e)
+      unmatched = setdiff(parts(J,src_tab), J[esrc])
+      for u in unmatched
+        # possibilities of setting `u`'s value of FK `e`
+        subres = Poss[]
 
-      # First possibility: a `e` sends `u` to a fresh ID
-      if !(rigid && tgt_tab ∈ realobs(S))
-        mu = Modify()
-        new_offset = mu.newstuff[tgt_tab] += 1
-        push!(mu.update, (e, u, nparts(J, tgt_tab) + new_offset))
-        push!(subres, (e, 0, mu))
+        # First possibility: a `e` sends `u` to a fresh ID
+        if tgt_tab ∉ z1 && !(rigid && tgt_tab ∈ free_obs(S))
+          mu = Modify()
+          mu.newstuff.ns[tgt_tab][(e, u)] = NewElem()
+          push!(mu.newstuff.ns[tgt_tab][(e, u)].map_in[e], u)
+          push!(subres, (e, 0, mu))
+        end
+        # Remaining possibilities (check satisfiability w/r/t cocones/cones)
+        for p in 1:nparts(J,tgt_tab)
+          m = Modify()
+          push!(m.update, (e, u, p))
+          push!(subres, (e, p, m))
+        end
+        push!(poss_list, Branch(e, u, subres))
       end
-      # Remaining possibilities (check satisfiability w/r/t cocones/cones)
-      for p in 1:nparts(J,tgt_tab)
-        m = Modify()
-        push!(m.update, (e, u, p))
-        push!(subres, (e, p, m))
-      end
-      push!(res, Branch(e, u, subres))
     end
   end
   # Orphan cocone apex elements.
@@ -171,11 +213,11 @@ function get_possibilities(S::Sketch, J::StructACSet, lc::LoneCones
       srctab = src(S, leg)
       src_fk = add_srctgt(leg)[1]
       # Consider a new element being added and mapping along this leg
-      if !(rigid && srctab ∈ realobs(S))
+      if srctab ∉ z1 && !(rigid && srctab ∈ free_obs(S))
         fresh = Modify()
-        new_offset = fresh.newstuff[srctab] += 1
-        push!(fresh.update, (leg, nparts(J, srctab) + new_offset, val))
-        push!(subres, (leg, nparts(J, srctab) + new_offset, fresh))
+        fresh.newstuff.ns[srctab][(k, leg)] = NewElem()
+        fresh.newstuff.ns[srctab][(k, leg)].map_out[leg] = val
+        push!(subres, (leg, nparts(J, srctab) + 1, fresh))
       end
       # Consider existing elements for which this leg has not yet been set
       for u in setdiff(parts(J, srctab), J[src_fk])
@@ -184,9 +226,9 @@ function get_possibilities(S::Sketch, J::StructACSet, lc::LoneCones
         push!(subres, (leg, u, m))
       end
     end
-    push!(res, Branch(cocone.apex, val, subres))
+    push!(or_poss, Branch(cocone.apex, val, subres))
   end
-  return res
+  return free_poss, constr_poss, or_poss
 end
 
 # DB
@@ -195,6 +237,7 @@ end
 """Explore a premodel and add its results to the DB."""
 function chase_step_db(db::LibPQ.Connection, premodel_id::Int; redo::Bool=false
                        )::Pair{Bool, Vector{Int}}
+  verbose = true
   # Check if already done
   if !redo
     z = columntable(execute(db, """SELECT 1 FROM Premodel WHERE
@@ -213,7 +256,7 @@ function chase_step_db(db::LibPQ.Connection, premodel_id::Int; redo::Bool=false
   end
 
   S, J_ = get_premodel(db, premodel_id)
-  println("CHASING PREMODEL #$premodel_id: $(sizes(S, J_))")
+  if verbose println("CHASING PREMODEL #$premodel_id: $(sizes(S, J_))") end
   # show(stdout, "text/plain", crel_to_cset(S, J_)[1])
   cs_res = chase_step(S, create_premodel(S, J_))
 
@@ -236,10 +279,11 @@ function chase_step_db(db::LibPQ.Connection, premodel_id::Int; redo::Bool=false
     println("\t\tFOUND MODEL")
     return true => [add_model(db, S, J, chased_id)]
   else
-    # println("\tBranching on $([(e,i,j) for (e,i,j,_) in m])")
+    println("\tBranching on $branch")
     res = Int[]
     for (e,i,mod) in branch.poss
-      J__ = update_crel(J, mod)
+      J__ = deepcopy(J)
+      update_crel!(J__, mod)
       bstr = string((branch.branch, branch.val, e, i))
       push!(res, add_branch(db, S, bstr, chased_id, J__))
     end
@@ -261,8 +305,8 @@ are in the database itself.
 function chase_below(db::LibPQ.Connection, S::Sketch, n::Int; extra::Int=3,
                      filt::Function=(x->true))::Nothing
   ms = []
-  for combo in combos_below(length(realobs(S)), n)
-    ps = mk_pairs(collect(zip(realobs(S), combo)))
+  for combo in combos_below(length(free_obs(S)), n)
+    ps = mk_pairs(collect(zip(free_obs(S), combo)))
     if filt(Dict(ps))
       premod = create_premodel(S, ps)
       push!(ms,premod)
@@ -282,417 +326,13 @@ function chase_set(db::LibPQ.Connection,S::Sketch,v::Vector{StructACSet},
     if isempty(todo)
       break
     else
-      Threads.@threads for mdl in todo
+      for mdl in todo # Threads.@threads?
         chase_step_db(db, mdl)
       end
     end
   end
 end
 
-
-# Colimits
-##########
-
-"""
-Add cocone apex objects based on the cocone diagram. Modifies `eq`
-
-For example: a cocone object D over a span B <- A -> C (i.e. a pushout)
-
-We start assuming there is a cocone element for |A|+|B|+|C| and then quotient
-by each arrow in the diagram. Assume each set has two elements, so we initially
-suppose D = |6|. Let A->B map both elements to b₁, while A↪C.
-
-D   legA legB legC
-------------------
-a₁  {a₁}   ?    ?
-a₂  {a₂}   ?    ?
-b₁   ?   {b₁}   ?
-b₂   ?   {b₂}   ?
-c₁   ?    ?    {c₁}
-c₂   ?    ?    {c₂}
-
-Take the map component that sends a₁ to b₁. The result will be
-D  legA legB legC
--------------------
-a₁b₁ {a₁} {b₁}   ?
-a₂   {a₂}  ?     ?
-b₂    ?   {b₂}   ?
-c₁    ?    ?    {c₁}
-c₂    ?    ?    {c₂}
-
-After all the quotienting (assuming all map components are defined), we get
-  D     legA   legB   legC
-------------------------------
-a₁a₂b₁c₁c₂  {a₁a₂} {b₁}  {c₁c₂}
-b₂            ?    {b₂}    ?
-
-If certain pieces of data are not yet defined (e.g. a₁↦c₁), we may have
-overestimated the size of the cocone, but when we later learn that map
-information, then the elements in D (a₁c₂ and a₂b₁c₂) will be merged together.
-So we get an upper bound on the number of elements of the apex object.
-
-This data combines with existing elements in D and any leg data (A->D,B->D,C->D)
-that may exist. Every table in the diagram potentially has a leg into the apex.
-We consider all possibilities:
-0.) None of the legs are defined (then: add a fresh element to D & set the legs)
-1.) All legs within a given group map to the same element in D (nothing to do)
-2.) Same as above, except some are undefined (then: set the undefined ones to
-    the known value from the other ones)
-3.) Distinct values of the apex are mapped to by legs. The only way for this to
-    be consistent is if we merge the values in the apex.
-
-There are also possibilities to consider from the apex side:
-1.) An apex element has a diagram group associated with it (nothing to do)
-2.) An apex element has NO group assigned to it (we need to consider
-    all the possibilities for a new element (in one of the legs) mapping
-    to it. This makes cocones different from cones: for cones, an unknown cone
-    element will have its possibilities resolved by ordinary branching on possible
-    FK values, whereas with cocones we have add a distinctive kind of branching.
-3.) Multiple groups may be assigned to the SAME apex element. This cannot be
-    fixed in general by merging/addition in the way that limit sketch models can
-    be. Thus we need a way to fail completely (given by the `nothing` option).
-"""
-function compute_cocones!(S::Sketch, J::StructACSet, eq::EqClass, w::Weights
-                         )::Union{Nothing, Pair{Modify,LoneCones}}
-  new_update, lone_cone = Modify(), LoneCones()
-  for c in S.cocones
-    res = compute_cocone!(S, J, c, new_update, eq, w)
-    if isnothing(res)
-      return nothing
-    end
-    lone_cone[c.apex] = res  # assumes there aren't multiple cones on same vert
-  end
-  return new_update => lone_cone
-end
-
-"""
-Unlike cones, where knowing partial maps can give you matches, we require all
-maps in a cocone diagram to be completely known in order to determine cocone
-elements.
-
-Updates `m` and `eq` and `w`
-"""
-function compute_cocone!(S::Sketch, J::StructACSet, co_cone::Cone,
-    m::Modify, eqc::EqClass, w::Weights)::Union{Nothing, Set{Int}}
-  verbose=false
-  J_orig = deepcopy(J)
-  nu, up = m.newstuff, m.update
-  diag_objs = co_cone.d[:vlabel]
-  diag_homs = ne(co_cone.d)== 0 ? Tuple{Symbol,Int,Int}[] :
-    collect(zip([co_cone.d[x] for x in [:elabel, :src,:tgt]]...))
-
-  # Get unquotiented apex: all distinct elements for each table involved
-  apex_obs = vcat([[(i, v) for v in eq_reps(eqc[obj])]
-                   for (i, obj) in enumerate(diag_objs)]...)
-  # Get the apex objs index from the (tab_ind, elem_ind) value itself
-  apex_ob_dict = Dict([(j,i) for (i,j) in enumerate(apex_obs)])
-  # Equivalence class of `apex_obs`
-  eq_elems = IntDisjointSets(length(apex_obs))
-
-  # Check if all homs are total before moving on
-  for e in Set(vcat(co_cone.d[:elabel])) # , last.(co_cone.legs)))
-    sreps = [find_root!(eqc[src(S,e)],x) for x in J[add_srctgt(e)[1]]]
-    missin = setdiff(eq_reps(eqc[src(S,e)]), sreps)
-    if !isempty(missin)
-      for miss in missin
-        w[e=>miss]+=.1
-      end
-      # println("cannot compute cocone bc $e does not map $missin anywhere")
-      return Set{Int}()
-    end
-  end
-
-  # Use C-set map data to quotient this
-  if verbose println("diag homs $diag_homs") end
-  for (e, i, j) in diag_homs
-    esrc, etgt = add_srctgt(e)
-    stab, ttab = src(S, e), tgt(S,e)
-    for (x_src, x_tgt) in zip([J[x] for x in [esrc, etgt]]...)
-      is, it = find_root!(eqc[stab], x_src), find_root!(eqc[ttab], x_tgt)
-      s, t = [apex_ob_dict[v] for v in [(i, is), (j, it)]]
-      union!(eq_elems, s, t)
-    end
-  end
-
-  # Reorganize equivalence class data into a set of sets.
-  eqsets = eq_sets(eq_elems; remove_singles=false)
-
-  # Determine what apex element(s) each eq class corresponds to, if any
-  apex_tgt_dict = Dict()
-  for eqset in eqsets
-    # ignore eqsets that have no leg/apex values
-    eqset_vals = [apex_obs[i] for i in eqset]
-    eqset_tabs = first.(eqset_vals)
-    if isempty(eqset_tabs ∩ vcat([co_cone.apex],first.(co_cone.legs)))
-      # println("Eqset disconnected from apex, ignoring $eqset_vals")
-      apex_tgt_dict[eqset] = Int[]
-      continue
-    end
-
-    # sanity check: no table appears more than once in an eq class
-    for i in Set(first.(eqset_vals))
-      length(filter(==(i), first.(eqset_vals))) <= 1 || "eqset_vals $eqset_vals"
-    end
-
-    if verbose println("eqset_vals $eqset_vals") end
-
-    leg_vals = Tuple{Symbol,Int,Int}[]
-    for (leg_ind, leg_name) in co_cone.legs
-      ind_vals = collect(last.(filter(v->v[1]==leg_ind, eqset_vals)))
-      if length(ind_vals) == 1
-        ind_val = only(ind_vals)
-        l_src, l_tgt = add_srctgt(leg_name)
-        a_tgt = J[incident(J, ind_val, l_src), l_tgt]
-        if !isempty(a_tgt)
-          # println("$(incident(J, ind_val, l_src)) a tgt $a_tgt")
-          ap = find_root!(eqc[co_cone.apex], first(a_tgt))
-          push!(leg_vals, (leg_name, ind_val, ap))
-        end
-      end
-    end
-    apex_tgts = apex_tgt_dict[eqset] = collect(Set(last.(leg_vals)))
-
-    # Handle things different depending on how many apex_tgts the group has
-    if length(apex_tgts) == 0 # we have a new element to add
-      nu[co_cone.apex] += 1
-      apex_rep = nparts(J, co_cone.apex) + nu[co_cone.apex]
-    # We have a cocone object with nothing mapping into it. Need to branch.
-    elseif length(apex_tgts) == 1 # eqset is consistent
-      apex_rep = only(apex_tgts)
-    else # eqset is consistent only if we merge apex vals
-      apex_rep = minimum(apex_tgts)
-      if length(apex_tgts) > 1 # we have to merge elements of apex
-        unions!(eqc[co_cone.apex], collect(apex_tgts))
-        println("computing cocone $(co_cone.apex) unioned indices $apex_tgts")
-
-      end
-    end
-
-    # Update `src(leg)` (index # `l_val`) to have map to `apex_rep` via `leg`
-    for (leg_ind, leg_name) in co_cone.legs
-      ind_vals = collect(last.(filter(v->v[1]==leg_ind, eqset_vals)))
-      if length(ind_vals) == 1
-        ind_val = only(ind_vals)
-        if length(apex_tgts)==0
-          #println("Cocone added $leg_name: $ind_val -> $apex_rep (fresh)")
-          push!(up, (leg_name, ind_val, apex_rep))
-        elseif !has_map(S, J, leg_name, ind_val, apex_rep, eqc)
-          #println("Cocone added $leg_name: $ind_val -> $apex_rep")
-          add_rel!(J, leg_name, ind_val, apex_rep)
-        end
-      else
-        isempty(ind_vals) || error("")
-      end
-    end
-  end
-
-  # Fail if necessarily distinct groups map to the same apex element
-  for es in filter(x->x[1]!=x[2], collect(Iterators.product(eqsets, eqsets)))
-    tgts1, tgts2 = [apex_tgt_dict[e] for e in es]
-    conflict = intersect(tgts1, tgts2)
-    if !isempty(conflict)
-      #evals1, evals2 = [[apex_obs[i] for i in e] for e in es]
-      #println("FAILING b/c $evals1 and $evals2 both map to $conflict ")
-      #show(stdout, "text/plain",  J_orig)
-      return nothing
-    end
-  end
-
-  seen_apex_tgts = union(values(apex_tgt_dict)...)
-  return Set(collect(setdiff(parts(J, co_cone.apex), seen_apex_tgts)))
-end
-
-# Limits
-########
-
-"""
-Add cone apex objects based on conjunctive queries.
-
-For example: a cone object D over a cospan B -> A <- C (i.e. a pullback)
-
-Imagine all sets have two elements. If B maps both elements to a₁ and C ↪ A,
-then a conjunctive query looking for instances of the diagram should return:
-
-QueryRes A  B  C
-----------------
-    1    a₁ b₁ c₁
-    2    a₁ b₂ c₁
-
-Because the functions are partial in the premodel, there may be limit objects
-that will be discovered to exist (by merging elements or adding new connections)
-So the query result is a lower bound on the number of elements in the apex.
-
-This means we expect there to be two objects in the limit object D.
-If an element already exists with the same legs, then we are good. If an element
-that disagrees with one of the legs exists, then we need to add a new element.
-If is an element with information that partially matches a query result, we
-still add a new element but note that these two may be merged at a later point.
-
-"""
-function compute_cones!(S::Sketch, J::StructACSet, eq::EqClass, w::Weights
-                       )::Modify
-  m = Modify()
-  [compute_cone!(S, J, c, m, eq, w) for c in S.cones]
-  return m
-end
-
-"""Special case treated separately. Modifies `m` and `eq`"""
-function empty_cone!(J::StructACSet, apx::Symbol, m::Modify, eq::EqClass)
-  if nparts(J, apx) == 0
-    m.newstuff[apx] = 1
-  else
-    unions!(eq[apx], collect(parts(J, apx)))
-  end
-end
-
-"""
-Modifies `m` and `eq`
-
-Check/enforce the following cone properties in this order:
-1. Two cone apex elements are equal if their corresponding leg values match.
-2. Same as (1), but in the other direction.
-3. For every pattern match of the cone's diagram in J, there is a cone element.
-
-(1)/(2) update `eq`, whereas information from (3) is added to the `Modify`
-
-Dream: we can somehow only query 'newly added' information
-"""
-function compute_cone!(S::Sketch, J::StructACSet, cone_::Cone, m::Modify,
-                       eq::EqClass, w::Weights)::Nothing
-  if isempty(cone_.legs)
-    return empty_cone!(J, cone_.apex, m, eq)
-  end
-  verbose = false
-  nu, upd = m.newstuff, m.update
-  cones = cone_eqs!(S, J, cone_, eq, w)
-  if isnothing(cones) return nothing end
-  if verbose println("CURRENT CONE $cones") end
-  # look for instances of the pattern
-  query_results = query_cone(S, J, cone_, eq, w) #query(J, cone_query(cone_))
-  for res in query_results
-    length(res) == length(cone_.legs) || error("Bad res $res from query")
-    resv = Vector{Int}(collect(res))
-    # For any new diagram matches that we do not have an explicit apex elem for:
-    if !haskey(cones, resv)
-      # println("ADDING NEW cone apex $(cone_.apex) b/c $resv not found in $cones")
-      new_offset = nu[cone_.apex] += 1
-      for (f, v) in zip(last.(cone_.legs), resv)
-        push!(upd, (f, nparts(J, cone_.apex) + new_offset, v))
-      end
-    else
-      # anything to do?
-    end
-  end
-end
-
-
-"""
-Look for instances of a cone's diagram in a premodel
-Modifies w
-"""
-function query_cone(S,J,c,eq, w::Weights)::Vector{Vector{Int}}
-  res = [[]]
-  verbose=  false
-  for (i, tab) in enumerate(c.d[:vlabel])
-    if verbose println("i $i tab $tab") end
-    new_res = Vector{Int}[]
-    if isempty(res) return Vector{Int}[] end
-    # we could product our options with this set, but let's filter now
-    eqs = eq_reps(eq[tab])
-
-    # We can immediately filter possible values based on self-edges in diagram
-    for self_e in incident(c.d, i, :tgt) ∩ incident(c.d, i, :src)
-      self_e_name = c.d[self_e, :elabel]
-      e_src = add_srctgt(self_e_name)[1]
-      for i in setdiff(parts(J, c.d[:vlabel][i]), J[e_src])
-        w[self_e_name => i] += 1
-      end
-
-      eqs = filter(x -> has_map(S, J, self_e_name, x, x, eq), eqs)
-    end
-    # any edges from tables we've seen so far into this current one constrain us
-    es = filter(e->c.d[e, :src] < i, incident(c.d, i, :tgt))
-    for old_res in res
-      for new_val in eqs
-        fail = false
-        for e in es
-          e_name, e_src = [c.d[e, x] for x in [:elabel, :src]]
-
-          for i in setdiff(old_res[e_src], J[add_srctgt(e_name)[1]])
-            w[e_name => i] += 1
-          end
-
-          if !has_map(S, J, e_name, old_res[e_src], new_val, eq)
-            if verbose println("No match: or $old_res, nv $new_val, e $e") end
-            fail = true
-            break
-          end
-        end
-        if !fail
-          push!(new_res, vcat(old_res, [new_val]))
-        end
-      end
-    end
-    res = new_res
-  end
-  return unique([[subres[i] for i in first.(c.legs)] for subres in res])
-end
-
-"""
-Start with equivalence classes of apex elements. Make the corresponding leg
-elements equal.
-Use the equivalences of cone apex elements to induce other equivalences.
-Return whether the resulting model is *un*satisfiable (if certain merging is
-forbidden).
-
-Modifies `eq` and `w`.
-"""
-function cone_eqs!(S::Sketch, J::StructACSet, c::Cone, eq::EqClass, w::Weights
-                  )::Union{Nothing, Dict{Vector{Int}, Int}}
-  eqclasses_legs = Vector{Int}[]
-  apex_elems = eq_reps(eq[c.apex])
-  legnames = last.(c.legs)
-  legtabs = [tgt(S, leg) for leg in legnames]
-  for eqs in apex_elems
-    eqclass_legs = Int[]
-    for (tab, leg) in zip(legtabs, legnames)
-      s, t = add_srctgt(leg)
-      legvals = Set(vcat(J[incident(J, eqs, s), t]...))
-      if length(legvals) == 1
-        [add_rel!(J, leg, e, only(legvals)) for e in eqs]
-        push!(eqclass_legs, only(legvals))
-      elseif isempty(legvals)
-        for eqcval in eqs
-          w[leg=>eqcval] += 1
-        end
-        push!(eqclass_legs, 0)
-      elseif length(legvals) > 1
-        # all the elements in this leg are equal
-        if rigid && tab ∈ realobs(S)
-          println("CONE EQ $eqs leg $leg merges $tab elements: $legvals")
-          return nothing
-        else
-          unions!(eq[tab], legvals)
-          push!(eqclass_legs, first(legvals))
-        end
-      end
-    end
-    push!(eqclasses_legs, eqclass_legs)
-  end
-  # Now quotient the apex elements if they have the same legs
-  res = Dict{Vector{Int}, Int}()
-  for (eqc, eqcl) in zip(apex_elems, eqclasses_legs)
-    if minimum(eqcl) > 0
-      lv = [find_root!(eq[tab], v) for (tab, v) in zip(legtabs, eqcl)]
-      if haskey(res, lv)
-        union!(eq[c.apex], eqc, res[lv])
-      else
-        res[lv] = eqc
-      end
-    end
-  end
-  return res
-end
 # Equalities
 ############
 
@@ -707,29 +347,99 @@ a₃  -> b₄
 Because a₁ is mapped to b₁ and b₃, we deduce b₁=b₃. If the equivalence relation
 has it such that a₂=a₃, then we'd likewise conclude b₂=b₄
 
-(could be parallelized)
+Subtlety: this could equate an existing object with a proposed object in a
+Modify. Or it could equate two new objects with each other.
+
+Updates `eqclass` - returns a new `m` to replace the old
 """
-function fun_eqs!(S::Sketch, J::StructACSet, eqclass::EqClass)::Bool
+function fun_eqs!(S::Sketch, J::StructACSet, m::NewStuff, eqclass::EqClass
+                  )::Tuple{Bool, Bool, NewStuff}
+  changed = false
+  J_cardinalities = Dict([v=>nparts(J,v) for v in S.schema[:vlabel]])
+  update_crel!(J, m)
+  [[push!(eqclass[v]) for _ in J_cardinalities[v]:(nparts(J, v)-1)]
+    for v in S.schema[:vlabel]]
+  fchanged, ffail = fun_eqs!(S, J, eqclass)
+  if ffail return changed, true, m end  # possibly fail
+  changed |= fchanged
+  merge!(S, J, eqclass) # apply the quotient
+
+  # show(stdout, "text/plain", crel_to_cset(S, J)[1])
+
+  ns = NewStuff()
+  for (ti, tab) in enumerate(S.schema[:vlabel])
+    #println("tab $tab $((J_cardinalities[tab]+1):nparts(J, tab)))")
+    for (ns_ind, J_ind) in enumerate((J_cardinalities[tab]+1):nparts(J, tab))
+      #println("ns_ind $ns_ind J_ind $J_ind")
+      ns.ns[tab][ns_ind] = NewElem()
+      # get maps in
+      for e in S.schema[incident(S.schema, ti, :tgt), :elabel]
+        s, t = add_srctgt(e)
+        #println("CHECKING map in $e ($(J[incident(J, J_ind, t), s]))")
+        for val_in in J[incident(J, J_ind, t), s]
+          push!(ns.ns[tab][ns_ind].map_in[e], val_in)
+        end
+      end
+      # get maps out
+      for e in S.schema[incident(S.schema, ti, :src), :elabel]
+        s, t = add_srctgt(e)
+        #println("CHECKING map in $e ($(J[incident(J, J_ind, s), t]))")
+        for val_out in J[incident(J, J_ind, s), t]
+          if length(val_out) == 1
+            ns.ns[tab][ns_ind].map_out[e] = only(val_out)
+          elseif length(val_out) > 1
+            error("We just quotiented by functionality")
+          end
+        end
+      end
+    end
+  end
+  # Delete the purely new stuff
+  [rem_parts!(J, tab, (c+1):nparts(J, tab)) for (tab, c) in
+   pairs(J_cardinalities)]
+  for e in S.schema[:elabel]
+    cols = zip([J[z] for z in add_srctgt(e)]...)
+    del_parts = [i for (i, (x,y)) in enumerate(cols) if x == 0 || y == 0]
+    rem_parts!(J, e, del_parts)
+  end
+  new_J_cards = Dict([v=>nparts(J,v) for v in S.schema[:vlabel]])
+  for v in S.schema[:vlabel]
+    new_J_cards[v] <= J_cardinalities[v] || error("Extra $v in $J")
+  end
+
+  return changed, false, ns
+end
+
+"""
+Return whether it changes the eqclass or fails.
+"""
+function fun_eqs!(S::Sketch, J::StructACSet, eqclass::EqClass)::Pair{Bool,Bool}
+  # println([k=>(nparts(J,k),length(v)) for (k,v) in pairs(eqclass)])
   cols = [:elabel, [:src, :vlabel], [:tgt, :vlabel]]
+  changed = false
   for (d, srcobj, tgtobj) in collect(zip([S.schema[x] for x in cols]...))
     dsrc, dtgt = add_srctgt(d)
     srcobj, tgtobj = src(S, d), tgt(S,d)
     for src_eqset in collect.(eq_sets(eqclass[srcobj]; remove_singles=false))
       tgtvals = Set(J[vcat(incident(J, src_eqset, dsrc)...), dtgt])
       if length(tgtvals) > 1
-        if rigid && tgtobj ∈ realobs(S)
+        if rigid && tgtobj ∈ free_obs(S)
           println("Fun Eq of $d (src: $src_eqset) merges $tgtobj: $tgtvals")
           show(stdout, "text/plain", J)
-          return true
+          return changed => true
         else
-          unions!(eqclass[tgtobj], collect(tgtvals))
+          for (i,j) in Iterators.product(tgtvals, tgtvals)
+            if !in_same_set(eqclass[tgtobj], i, j)
+              changed = true
+              union!(eqclass[tgtobj], i, j)
+            end
+          end
         end
       end
     end
   end
-  return false
+  return changed => false
 end
-
 
 """
 Modifies J, eqclasses, and w.
@@ -745,8 +455,8 @@ If both paths are determined, the final terms can be set to be equivalent, if
 this is allowed (otherwise, return `true`).
 """
 function path_eqs!(S::Sketch, J::StructACSet, eqclasses::EqClass, w::Weights
-                  )::Bool
-  verbose = false
+                  )::Pair{Bool, Bool}
+  verbose, changed = false, false
   for (eqn, p, q) in S.eqs # could be done in parallel
     if verbose println("processing equality $eqn") end
     src_tab, tgt_tab = src(S, p[1]), tgt(S, p[end])
@@ -759,16 +469,20 @@ function path_eqs!(S::Sketch, J::StructACSet, eqclasses::EqClass, w::Weights
       real_p, real_q = (!isnothing).([res_p, res_q])
       if is_penult_p && real_q && !is_penult_q
         if verbose println("$eqn (rev) set $(last(p)): $res_p -> $res_q") end
+        changed = true
         add_rel!(J, last(p), res_p, res_q)
       elseif is_penult_q && real_p && !is_penult_p
         if verbose println("$eqn (fwd) set $(last(q)): $res_q -> $res_p") end
+        changed = true
         add_rel!(J, last(q), res_q, res_p)
-      elseif real_p && real_q && !(is_penult_p || is_penult_q) && (res_p!=res_q)
-        if rigid && tgt_tab ∈ realobs(S)
+      elseif real_p && real_q && !(is_penult_p || is_penult_q) && !in_same_set(
+              eqclasses[tgt_tab],res_p,res_q)
+        changed = true
+        if rigid && tgt_tab ∈ free_obs(S)
           if verbose
             println("Fail: tried to equate $tgt_tab #$res_p and $res_q")
           end
-          return true
+          return changed => true
         else
           println("$eqn set $tgt_tab: $res_p == $res_q")
           union!(eqclasses[tgt_tab], res_p, res_q)
@@ -776,7 +490,7 @@ function path_eqs!(S::Sketch, J::StructACSet, eqclasses::EqClass, w::Weights
       end
     end
   end
-  return false
+  return changed => false
 end
 
 """
@@ -868,3 +582,4 @@ function discrete_cardinality_check(S::Sketch, J::StructACSet)::Bool
   end
   return true
 end
+end # module

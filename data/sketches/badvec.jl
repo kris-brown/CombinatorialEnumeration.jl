@@ -23,7 +23,7 @@ itself via pred and next. Need a constraint that says: mapping
 to yourself via next means you merge with ⊤. This requires an
 extra cone object and two extra morphisms.
 
-However, even with this, we can have a regular list with an addition PAIR of
+However, even with this, we can have a regular list with an additional PAIR of
 elements which map to each other with succ and prev. Essentially, what we need
 is to say that the transitive closure of `next` covers all of `Succ`. But this
 kind of constraint is not expressible in the language of sketches, to my

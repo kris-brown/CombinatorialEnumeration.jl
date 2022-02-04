@@ -1,7 +1,7 @@
 using Test
-include(joinpath(@__DIR__, "../../src/Sketch.jl"))
-include(joinpath(@__DIR__, "../../src/Models.jl"))
-include(joinpath(@__DIR__, "../../src/ModEnum.jl"))
+using Revise
+using Catlab.CategoricalAlgebra
+using ModelEnumeration
 
 """
 Total orders
@@ -16,6 +16,8 @@ Linear (or total): Partial ∧ ∀xy x≤y ∨ y≤x
  refl ↘  ⇈ leq, geq
 Cmp ⇉  Leq
   c1,c2
+
+Unclear how this enforces antisymmetry, if it does.
 """
 
 to_schema =  @acset LabeledGraph begin
@@ -99,14 +101,8 @@ Jinit = create_premodel(S, [:I=>2, :Leq=>3])
 chase_set(db, S, StructACSet[Jinit], 5)
 Jinit = create_premodel(S, [:I=>3, :Leq=>6])
 chase_set(db, S, StructACSet[Jinit], 9)
+
 for (m, r) in zip(get_models(db, S, 9), [r1,r2,r3])
   @test is_isomorphic(m, r)
 end
-# J_ = get_premodel(db, 8)[2]
-# J = create_premodel(S, J_)
-# J_bkup = deepcopy(J)
-# eq = init_eq(S, J)
-# peq_res = path_eqs!(S, J, eq)
-# cocone_res = compute_cocones!(S, J, eq)
-# ms = get_models(db, S, 9)
 

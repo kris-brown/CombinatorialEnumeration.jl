@@ -13,5 +13,4 @@ xmod,xrel = fg.cset(), fg.crel()
 xmodrel = initrel(fg, xmod)
 @test crel_to_cset(fg, xmodrel) == (xmod => false)
 
-@test isempty(ChaseStepData())
 

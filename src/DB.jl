@@ -1,12 +1,17 @@
-using Catlab
+module DB
+export init_db, get_premodel_ids, get_premodel, get_premodels, add_model,
+       add_premodel, get_model, get_models, get_model_ids, set_failed,
+       add_branch
+
+"""Interact with a postgres database"""
+
+using ..Sketches
+using ..Models
+
+using Catlab.CategoricalAlgebra, Catlab.Present
 using CSetAutomorphisms
 using LibPQ, Tables
 
-include(joinpath(@__DIR__, "Sketch.jl"))
-
-conn = LibPQ.Connection("dbname=models")
-result = execute(conn, "SELECT typname FROM pg_type WHERE oid = 16")
-data = columntable(result)
 
 const FK_ = Union{Pair{String,String},String}
 const Attr_ = Tuple{String, String, Bool}
@@ -76,6 +81,7 @@ function set_failed(db::LibPQ.Connection, pid::Int, f::Bool)::Nothing
           [pid, f])
   return nothing
 end
+
 """Add Sketch (if not already in DB) and return id"""
 function add_sketch(db::LibPQ.Connection, F::Sketch)::Int
   ghash = hash(F)
@@ -224,3 +230,4 @@ function get_premodels(db::LibPQ.Connection, sketch::Sketch; maxsize::Int=0
   [get_premodel(db, Int64(i))[2] for i
    in get_premodel_ids(db, sketch; maxsize=maxsize)]
 end
+end  # module

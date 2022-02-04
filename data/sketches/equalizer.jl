@@ -22,4 +22,4 @@ end
 
 
 eqsketch = Sketch(:equalizer, eqschema, [
-    Cone(eqconed, fxb, [1=>:π1,2=>:π2])], []);
+    Cone(eqconed, fxb, [1=>:π1,2=>:π2])], Cone[], []);

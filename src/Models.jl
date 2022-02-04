@@ -1,70 +1,113 @@
-include(joinpath(@__DIR__, "Sketch.jl"))
+
+module Models
+export EqClass, NewElem, NewStuff, Modify, mk_pairs, eq_sets, eq_dicts, eq_reps,
+       update_crel!, has_map, create_premodel, crel_to_cset, init_eq,
+       add_rel!, unions!
+
+"""
+Functions for the manipulation of models/premodels
+"""
+
+using ..Sketches
+
+using Catlab.CategoricalAlgebra
 using DataStructures
 using AutoHashEquals
 
-"""Functions for the manipulation of models/premodels"""
+import Base: merge!, show
+
+# Data structures
+#################
 const EqClass = Dict{Symbol, IntDisjointSets}
-const NewStuff = DefaultDict{Symbol, Int}
-const UpdateStuff = Tuple{Symbol, Int, Int}
-const MergeStuff = Tuple{Symbol, Int, Int}
+
+mutable struct NewElem
+  map_in  :: DefaultDict{Symbol, Vector{Int}}
+  map_out :: Dict{Symbol, Int}
+  function NewElem()
+    return new(DefaultDict{Symbol, Vector{Int}}(()->Int[]), Dict{Symbol, Int}())
+  end
+end
+
+function Base.show(io::IO, ne::NewElem)
+  ins = collect(filter(kv->!isempty(kv[2]), pairs(ne.map_in)))
+  outs = collect(pairs(ne.map_out))
+  print(io, "NE(")
+  if !isempty(ins)
+      print(io, "{")
+    for (k,v) in ins
+      print(io, "$k:$v,")
+    end
+    print(io, "},")
+  end
+  if !isempty(outs)
+    print(io, "{")
+    for (k,v) in outs
+      print(io, "$k:$v,")
+    end
+    print(io, "\b})")
+  end
+print(io, ")")
+end
+
+mutable struct NewStuff
+  ns::DefaultDict{Symbol, Dict{Any, NewElem}}
+  function NewStuff()
+    return new(DefaultDict{Symbol, Dict{Any, NewElem}}(
+                 ()->Dict{Any, NewElem}()))
+  end
+end
+
+function Base.show(io::IO, ns::NewStuff)
+  print(io, "NS("*(isempty(ns.ns) ? " " : ""))
+  for (k,v) in filter(kv->!isempty(kv[2]), pairs(ns.ns))
+    print(io, "$k:$v,")
+  end
+  print(io, "\b)")
+end
+
 const IType = Union{Nothing, Vector{Pair{Symbol, Int}}, StructACSet}
 
 # Modify
 ########
 @auto_hash_equals mutable struct Modify
   newstuff::NewStuff
-  update::Vector{UpdateStuff}
-  #merge::Vector{MergeStuff}
+  update::Set{Tuple{Symbol, Int, Int}}
 end
+
 function Modify()
-  return Modify(NewStuff(()->0), UpdateStuff[])
+  return Modify(NewStuff(), Set{Tuple{Symbol, Int, Int}}())
 end
 
-Base.isempty(m::Modify)::Bool = sum(values(m.newstuff))==0 && isempty(m.update)
-function Base.union(S::Sketch, J::StructACSet, xs::Vector{Modify})::Modify
-  if length(xs) == 0 return Modify()
-  elseif length(xs) == 1 return only(xs)
-  else
-    m = union(S,J,xs[1],xs[2])
-    for m_next in xs[3:end]
-      m = union(S, J, m, m_next)
-    end
-  return m
-  end
-end
-
-function Base.union(S::Sketch, J::StructACSet, x::Modify, y::Modify)::Modify
-  res = deepcopy(x)
-  for (key, yval) in pairs(y.newstuff)
-    res.newstuff[key]+= yval
-  end
-  # UPDATE THE REFERENCES IN Y.UPDATE THAT POINT TO Y.NEWSTUFF
-  for u in y.update
-    (f, i, j) = u
-    mk_new(tab::Symbol, ind::Int) = ind + (
-      ind > nparts(J, tab) ? x.newstuff[tab] : 0)
-    push!(res.update, (f, mk_new(src(S, f), i), mk_new(tgt(S, f), j)))
-  end
-  return res
-end
-
-"""
-Factor modify information into that which extends the ACSet and that which does
-not.
-"""
-function split_modify(S::Sketch, J::StructACSet, m::Modify
-                     )::Pair{Modify, Modify}
-  new_m, old_m = Modify(m.newstuff, UpdateStuff[]), Modify()
-  for u in m.update
-    (f, i, j) = u
-    if  i > nparts(J, src(S, f)) || j > nparts(J, tgt(S, f))
-      push!(new_m.update, u)
-    else
-      push!(old_m.update, u)
+"""Mergy `y` into `x`"""
+function Base.union!(x::NewStuff, y::NewStuff)
+  for (tab, new_elems) in pairs(y.ns)
+    for (k, ne) in pairs(new_elems)
+      if haskey(x[tab], k)
+        err = """Can't merge $x and $y because of $tab: $key
+                 ... or should we merge the new elems???"""
+        ne == x[tab][k] || error(err)
+      else
+        x[tab][k] = ne
+      end
     end
   end
-  return new_m => old_m
 end
+
+
+# """Update the values of things with their canonical reps"""
+# function canonize!(S::Schema, ns::NewStuff, eq::EqClass)
+#   for (tab, v) in pairs(ns)
+#     for (k, (mIn, mOut)) in pairs(v)
+#       ns[tab][k] = canonize(S, mIn, eq, true) => canonize(S, mOut, eq, false)
+#     end
+#   end
+# end
+
+# function canonize(S::Schema, x::Dict{Symbol, Int}, eq::EqClass, is_src::Bool)
+#   tab = k -> (is_src ? src : tgt)(S, k)
+#   return Dict([k=>find_root!(eq[tab(k)], v) for (k,v) in pairs(x)])
+# end
+
 # Generic helpers
 #################
 function mk_pairs(v::Vector{Tuple{T1,T2}})::Vector{Pair{T1,T2}} where {T1,T2}
@@ -83,6 +126,24 @@ function eq_sets(eq::IntDisjointSets; remove_singles::Bool=false)::Set{Set{Int}}
   end
   filt = v -> !(remove_singles && length(v)==1)
   return Set(filter(filt, collect(values(eqsets))))
+end
+
+"""
+Get a function which maps an ACSet part to the minimum element of its eq class
+"""
+function eq_dicts(eq::EqClass)::Dict{Symbol, Dict{Int,Int}}
+  res = Dict{Symbol, Dict{Int,Int}}()
+  for (k, v) in pairs(eq)
+    d = Dict{Int, Int}()
+    for es in eq_sets(v)
+      m = minimum(es)
+      for e in es
+        d[e] = m
+      end
+    end
+    res[k] = d
+  end
+  return res
 end
 
 """
@@ -117,9 +178,12 @@ end
 
 """Initialize equivalence classes for a premodel"""
 function init_eq(S::Sketch, J::StructACSet)::EqClass
-  EqClass([o=>IntDisjointSets(nparts(J, o)) for o in S.schema[:vlabel]])
+  init_eq([o=>nparts(J, o) for o in S.schema[:vlabel]])
 end
 
+function init_eq(v::Vector{Pair{Symbol, Int}})::EqClass
+  EqClass([o=>IntDisjointSets(n) for (o, n) in v])
+end
 # Premodel/Model conversion
 ###########################
 """
@@ -178,23 +242,22 @@ end
 # Modifying CSets
 ##################
 """Use equivalence class data to reduce size of a premodel"""
-function merge!(S::Sketch, J::StructACSet, eqclasses::EqClass)::Nothing
+function merge!(S::Sketch, J::StructACSet, eqclasses::EqClass
+               )::Dict{Symbol, Dict{Int,Int}}
   verbose = false
   # Initialize a function mapping values to their new (quotiented) value
-  μ = Dict{Symbol, Vector{Pair{Int,Int}}}([
-    o=>Pair{Int,Int}[] for o in S.schema[:vlabel]])
+  μ = eq_dicts(eqclasses)
 
   # Initialize a record of which values are to be deleted
   delob = DefaultDict{Symbol, Vector{Int}}(Vector{Int})
 
-  # Populate `μ` and `delob` from `eqclasses`
+  # Populate `delob` from `eqclasses`
   for (o, eq) in pairs(eqclasses)
     eqsets = eq_sets(eq; remove_singles=true)
     # Minimum element is the representative
     for vs in map(collect,collect(values(eqsets)))
       m = minimum(vs)
       vs_ = [v for v in vs if v!=m]
-      append!(μ[o], [v=>m for v in vs_])
       append!(delob[o], collect(vs_))
     end
   end
@@ -223,26 +286,41 @@ function merge!(S::Sketch, J::StructACSet, eqclasses::EqClass)::Nothing
   for (o, vs) in collect(delob)
     isempty(vs) || rem_parts!(J, o, sort(vs))
   end
+  return μ
 end
 
 
 """
-Apply the additions updates specified in a Modify to a CSet (creates a copy)
+Apply the additions updates specified in a NewStuff to a CSet
+"""
+function update_crel!(J::StructACSet, nw::NewStuff)
+  for (ob, vs) in pairs(nw.ns)
+    for n_e in values(vs)
+      add_newelem!(J, ob, n_e)
+    end
+  end
+end
 
-Because some updates may refer to indices that only exist with the additions,
-we do the additions first."""
-function update_crel(J::StructACSet, modify::Modify)::StructACSet
-  nw, up = modify.newstuff, modify.update
-  J_ = deepcopy(J)
-  for (ob, i) in pairs(nw)
-      add_parts!(J_, ob, i)
+function add_newelem!(J::StructACSet, ob::Symbol, n_e::NewElem)
+  new_id = add_part!(J, ob)
+  for (mo, moval) in pairs(n_e.map_out)
+    d = Dict(zip(add_srctgt(mo), [new_id, moval]))
+    add_part!(J, mo; d...)
   end
-  for (homname, s, t) in up
-    # println("adding $homname: $s => $t")
-    hsrc, htgt = add_srctgt(homname)
-    add_part!(J_, homname; Dict([hsrc=>s,htgt=>t])...)
+  for (mi, mivals) in pairs(n_e.map_in)
+    for mival in mivals
+      d = Dict(zip(add_srctgt(mi), [mival, new_id]))
+      add_part!(J, mi; d...)
+    end
   end
-  return J_
+end
+
+
+function update_crel!(J::StructACSet, m::Modify)
+  update_crel!(J, m.newstuff)
+  for (k, i, j) in m.update
+    add_rel!(J, k , i, j)
+  end
 end
 
 add_rel!(J::StructACSet, f::Symbol, i::Int, j::Int) =
@@ -265,3 +343,4 @@ function has_map(S::Sketch, J::StructACSet, f::Symbol, x::Int, y::Int,
   st = (s_eq(x), t_eq(y))
   return st ∈ collect(zip(s_eq.(J[from_map]), t_eq.(J[to_map])))
 end
+end # module
