@@ -2,7 +2,7 @@
 module Models
 export EqClass, NewElem, NewStuff, Modify, mk_pairs, eq_sets, eq_dicts, eq_reps,
        update_crel!, has_map, create_premodel, crel_to_cset, init_eq,
-       add_rel!, unions!
+       add_rel!, unions!, init_defined, update_defined!
 
 """
 Functions for the manipulation of models/premodels
@@ -94,25 +94,13 @@ function Base.union!(x::NewStuff, y::NewStuff)
 end
 
 
-# """Update the values of things with their canonical reps"""
-# function canonize!(S::Schema, ns::NewStuff, eq::EqClass)
-#   for (tab, v) in pairs(ns)
-#     for (k, (mIn, mOut)) in pairs(v)
-#       ns[tab][k] = canonize(S, mIn, eq, true) => canonize(S, mOut, eq, false)
-#     end
-#   end
-# end
-
-# function canonize(S::Schema, x::Dict{Symbol, Int}, eq::EqClass, is_src::Bool)
-#   tab = k -> (is_src ? src : tgt)(S, k)
-#   return Dict([k=>find_root!(eq[tab(k)], v) for (k,v) in pairs(x)])
-# end
 
 # Generic helpers
 #################
 function mk_pairs(v::Vector{Tuple{T1,T2}})::Vector{Pair{T1,T2}} where {T1,T2}
   [a=>b for (a,b) in v]
 end
+
 # Helper for IntDisjointSets
 ############################
 """
@@ -342,5 +330,37 @@ function has_map(S::Sketch, J::StructACSet, f::Symbol, x::Int, y::Int,
   t_eq = i -> find_root!(eq[t], i)
   st = (s_eq(x), t_eq(y))
   return st ∈ collect(zip(s_eq.(J[from_map]), t_eq.(J[to_map])))
+end
+# Defined
+#########
+function init_defined(S::Sketch, J::StructACSet)::Defined
+  d = free_obs(S) => Set{Symbol}()
+  update_defined!(S, J, d)
+  println("INIT d $d")
+  return d
+end
+"""
+Return a new Defined object with updates:
+- A hom that has a value for all elements of its domain
+- A limit object that has all objects AND homs in its diagram defined
+  (but only right after compute_cone! or compute_cocone! is run, so we do not
+   handle that here)
+Return whether a change was made or not
+"""
+function update_defined!(S::Sketch, J::StructACSet, d::Defined)::Bool
+  _, dhom = d
+  changed = false
+  for h in setdiff(S.schema[:elabel], dhom)
+    s = src(S,h)
+    if s∈d[1] && isempty(setdiff(parts(J, s), J[add_srctgt(h)[1]]))
+      # println("parts $(parts(J, src(S,h)))")
+      # println("J[addsrctgt[1] $(J[add_srctgt(h)[1]])")
+      push!(dhom, h)
+      println("$h is now defined! ")
+      show(stdout, "text/plain", crel_to_cset(S, J)[1])
+      changed |= true
+    end
+  end
+  return changed
 end
 end # module

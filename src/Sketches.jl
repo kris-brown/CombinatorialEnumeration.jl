@@ -1,20 +1,23 @@
 module Sketches
-export Sketch, LabeledGraph, Cone, dual, cone_query, free_obs, relsize,
+export Sketch, LabeledGraph, Cone, Defined, dual, cone_query, free_obs, relsize,
        sketch_from_json, to_json, add_srctgt, sizes, zero_ob, one_ob, free_homs,
-       constr_homs
+       constr_homs, hom_set, enumerate_paths, add_path!, eqs_to_diagram, hom_in,
+       hom_out
 
 """Basic data structures for limit sketches"""
 
 using Catlab.Present, Catlab.Graphs, Catlab.Theories, Catlab.CategoricalAlgebra
 using Catlab.Graphs.BasicGraphs: TheoryGraph
 using Catlab.CategoricalAlgebra.CSetDataStructures: struct_acset
-import Catlab.Graphs: src, tgt
+import Catlab.Graphs: src, tgt, topological_sort
 using CSetAutomorphisms
 
 using JSON
 using AutoHashEquals
 using DataStructures: DefaultDict
 import Base: isempty
+######################################
+const Defined = Pair{Set{Symbol},Set{Symbol}}
 
 """Edges and vertices labeled by symbols"""
 @present TheoryLabeledGraph <: TheoryGraph begin
@@ -56,14 +59,15 @@ representing premodels, which may not satisfy equations/(co)limit constraints)
   schema::LabeledGraph
   cones::Vector{Cone}
   cocones::Vector{Cone}
-  eqs::Vector{Tuple{Symbol, Vector{Symbol}, Vector{Symbol}}}
+  eqs::Vector{LabeledGraph}#, Dict{Vector{Vector{Symbol}}, Int}}}
   cset::Type
   cset_pres::Presentation
   crel::Type
   crel_pres::Presentation
   function Sketch(name::Symbol, schema::LabeledGraph, cones::Vector{Cone},
                   cocones::Vector{Cone}, eqs::Vector)
-
+    namechars = join(vcat(schema[:vlabel], schema[:elabel]))
+    all([!occursin(x, namechars) for x in [",", "|"]]) || error("BAD SYMBOL in $schema")
     function grph_to_cset(name::Symbol, sketch::LabeledGraph
                          )::Pair{Type, Presentation}
       pres = Presentation(FreeSchema)
@@ -144,17 +148,28 @@ representing premodels, which may not satisfy equations/(co)limit constraints)
           "Cone diagram does not map into schema $c")
       end
     end
-
-    [check_eq(p,q) for (_, p, q) in eqs]
+    if !(isempty(eqs) || first(eqs) isa LabeledGraph)
+      [check_eq(p,q) for (_, p, q) in eqs]
+      eqds = eqs_to_diagram(schema, eqs)
+    else
+      eqds = isempty(eqs) ? LabeledGraph[] : eqs
+    end
     [check_cone(c) for c in cones]
     [check_cocone(c) for c in cocones]
     cset_type, cset_pres = grph_to_cset(name, schema)
     crel_type, crel_pres = grph_to_crel(name, schema)
-
-    return new(name, schema, cones, cocones, eqs, cset_type, cset_pres,
+    return new(name, schema, cones, cocones, eqds, cset_type, cset_pres,
                crel_type, crel_pres)
   end
 end
+
+struct SketchMorphism
+  d::Sketch
+  cd::Sketch
+  h::ACSetTransformation # Graph transformation of schemas
+end
+
+
 
 """Dual sketch. Optionally rename obs/morphisms and the sketch itself"""
 function dual(s::Sketch, n::Symbol=Symbol(),
@@ -200,15 +215,14 @@ to_json(S::Sketch) = JSON.json(Dict([
   :name=>S.name, :schema=>generate_json_acset(S.schema),
   :cones => [cone_to_dict(c) for c in S.cones],
   :cocones => [cone_to_dict(c) for c in S.cocones],
-  :eqs => [Dict([:name=>n,:p=>p,:q=>q]) for (n,p,q) in S.eqs]]))
+  :eqs => generate_json_acset.(S.eqs)]))
 
 function sketch_from_json(s::String)::Sketch
   p = JSON.parse(s)
   Sketch(Symbol(p["name"]), parse_json_acset(LabeledGraph, p["schema"]),
     [dict_to_cone(d) for d in p["cones"]],
     [dict_to_cone(d) for d in p["cocones"]],
-    [(Symbol(pq["name"]), map(Symbol, pq["p"]),
-                map(Symbol, pq["q"])) for pq in p["eqs"]])
+    [parse_json_acset(LabeledGraph,e) for e in p["eqs"]])
 end
 
 add_srctgt(x::Symbol) = Symbol("src_$(x)") => Symbol("tgt_$(x)")
@@ -245,6 +259,96 @@ end
 
 zero_ob(S::Sketch) = [c.apex for c in S.cocones if nv(c.d) == 0]
 one_ob(S::Sketch) = [c.apex for c in S.cones if nv(c.d) == 0]
+
+"""List of arrows between two sets of vertices"""
+function hom_set(S::Sketch, d_symbs, cd_symbs)::Vector{Symbol}
+  d_i, cd_i = [vcat(incident(S.schema, x, :vlabel)...) for x in [d_symbs,cd_symbs]]
+  e_i = vcat(incident(S.schema, d_i, :src)...) ∩ vcat(incident(S.schema, cd_i, :tgt)...)
+  return S.schema[e_i, :elabel]
+end
+
+hom_in(S::Sketch, t::Symbol) = hom_set(S, S.schema[:vlabel], [t])
+hom_out(S::Sketch, t::Symbol) = hom_set(S, [t], S.schema[:vlabel])
+
+
+const DD = DefaultDict{Pair{Int,Int},Set{Vector{Int}}}
+"""Enumerate all paths of an acyclic graph, indexed by src+tgt"""
+function enumerate_paths(G::AbstractGraph;
+                         sorted::Union{AbstractVector{Int},Nothing}=nothing
+                        )::DD
+  sorted = isnothing(sorted) ? topological_sort(G) : sorted
+  Path = Vector{Int}
+  paths = [Set{Path}() for _ in 1:nv(G)] # paths that start on a particular V
+  for v in reverse(topological_sort(G))
+    push!(paths[v], Int[]) # add length 0 paths
+    for e in incident(G, v, :src)
+      push!(paths[v], [e]) # add length 1 paths
+      for p in paths[G[e, :tgt]] # add length >1 paths
+        push!(paths[v], vcat([e], p))
+      end
+    end
+  end
+  # Restructure `paths` into a data structure indexed by start AND end V
+  allpaths = DefaultDict{Pair{Int,Int},Set{Path}}(()->Set{Path}())
+  for (s, ps) in enumerate(paths)
+    for p in ps
+      push!(allpaths[s => isempty(p) ? s : G[p[end],:tgt]], p)
+    end
+  end
+  return allpaths
+end
+
+"""Add path to commutative diagram without repeating information"""
+function add_path!(schema::LabeledGraph, lg::LabeledGraph, p::Vector{Symbol},
+                  all_p::Dict{Vector{Symbol}, Int},
+                  eqp::Union{Nothing, Vector{Symbol}}=nothing,
+                   )
+  #all_p = isnothing(all_p) ? union(values(enumerate_paths(lg)...)) : all_p
+  s = only(incident(schema, first(p), :elabel))
+
+  for i in 1:length(p)
+    if !haskey(all_p, p[1:i])
+      e = only(incident(schema, p[i], :elabel))
+      t = schema[e, [:tgt,:vlabel]]
+      if isnothing(eqp) || i < length(p)
+        new_v = add_part!(lg, :V; vlabel=t)
+      else
+        new_v = all_p[eqp]
+      end
+      s = i == 1 ? 1 : all_p[p[1:i-1]]
+      add_part!(lg, :E; src=s, tgt=new_v, elabel=p[i])
+      all_p[p[1:i]] = new_v
+    end
+  end
+end
+
+"""
+Get per-object diagrams encoding all commutative diagrams which start at that
+point, using the information of pairwise equations
+
+eqs:: Vector{Tuple{Symbol, Vector{Symbol}, Vector{Symbol}}}
+"""
+function eqs_to_diagram(schema::LabeledGraph, eqs
+                        )::Vector{LabeledGraph}#,Dict{Vector{Vector{Symbol}}, Int}}}
+  lgs = [LabeledGraph() for _ in 1:nv(schema)]
+  all_ps = [Dict{Vector{Symbol}, Int}() for _ in 1:nv(schema)]
+  for (i, root) in enumerate(schema[:vlabel])
+    add_part!(lgs[i], :V; vlabel=root)
+  end
+  for (_, p1, p2) in eqs
+    src_i = schema[only(incident(schema, first(p1), [:elabel])), :src]
+    if haskey(all_ps[src_i], p2)
+      add_path!(schema, lgs[src_i], p1, all_ps[src_i], p2)
+    else
+      add_path!(schema, lgs[src_i], p1, all_ps[src_i])
+      add_path!(schema, lgs[src_i], p2, all_ps[src_i], p1)
+    end
+  end
+  #collectkeys = d->Dict{Vector{Vector{Symbol}}, Int}(filter(x->length(x[1])>1,[
+  #    [k for (k, v_) in collect(d) if v_==v]=>v for v in Set(values(d))]))
+  #dics = collectkeys.(all_ps)
+  return lgs #[a=>b for (a,b) in zip(lgs, dics)]
+end
 
 end # module
 

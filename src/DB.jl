@@ -53,6 +53,7 @@ tabs = [Tab("Sketch", [("hash", "DECIMAL(20,0)", true),
                        ("jdump","TEXT", true)], FK_[]),
     Tab("Premodel", [("hash", "DECIMAL(20,0)", true),
                      ("jdump", "TEXT", true),
+                     ("def", "TEXT", false),
                      ("failed", "BOOLEAN", false),
                      ("size", "INTEGER", false),], FK_["Sketch"]),
     Tab("Model", [("hash", "DECIMAL(20,0)", true),
@@ -107,8 +108,9 @@ end
 
 """Add the result of a `chase_step_db` step"""
 function add_branch(db::LibPQ.Connection, S::Sketch, choice::String,
-                   chased_premodel_id::Int, chosen_premodel::StructACSet)::Int
-  new_id = add_premodel(db, S, chosen_premodel)
+                   chased_premodel_id::Int, chosen_premodel::StructACSet,
+                   d::Defined)::Int
+  new_id = add_premodel(db, S, chosen_premodel, d)
   msg = "INSERT INTO Choice(parent, child, delta) VALUES(\$1, \$2, \$3)"
   execute(db, msg * " ON CONFLICT DO NOTHING",
           [chased_premodel_id, new_id, string(choice)])
@@ -116,7 +118,7 @@ function add_branch(db::LibPQ.Connection, S::Sketch, choice::String,
 end
 
 """Add premodel (if it doesn't exist) """
-function add_premodel(db::LibPQ.Connection, F::Sketch, m::StructACSet;
+function add_premodel(db::LibPQ.Connection, F::Sketch, m::StructACSet, d::Defined;
                       parent::Union{Int, Nothing}=nothing,
                       chash::Union{UInt64, Nothing}=nothing)::Int
   # println("\t adding premodel $m")
@@ -127,10 +129,11 @@ function add_premodel(db::LibPQ.Connection, F::Sketch, m::StructACSet;
   if isempty(r_)
     fid = add_sketch(db, F)
     jsn = generate_json_acset(m)
+    dstr = join(d[1],",") * "|" * join(d[2], ",")
     r, = columntable(execute(db,
-      """INSERT INTO Premodel (hash, jdump, Sketch_id, size)
-         VALUES (\$1,\$2, \$3, \$4) RETURNING Premodel_id""",
-            [chash, jsn, fid, relsize(F, m)]))[:premodel_id]
+      """INSERT INTO Premodel (hash, jdump, def, Sketch_id, size)
+         VALUES (\$1,\$2, \$3, \$4, \$5) RETURNING Premodel_id""",
+            [chash, jsn, dstr, fid, relsize(F, m)]))[:premodel_id]
   else
     r, = r_
   end
@@ -144,11 +147,11 @@ end
 
 """Add a premodel that is a model (if not already there). Return id"""
 function add_model(db::LibPQ.Connection, F::Sketch, relm::StructACSet,
-                   parent::Int;
+                   d::Defined, parent::Int;
                    relm_hsh::Union{UInt64, Nothing}=nothing)::Int
   m, partial = crel_to_cset(F, relm) # fail if nonfunctional
   !partial || error("adding a partial model")
-  pid = add_premodel(db, F, relm; parent=parent, chash=relm_hsh)
+  pid = add_premodel(db, F, relm, d; parent=parent, chash=relm_hsh)
 
   # check if already in db
   chash = canonical_hash(m; pres=F.cset_pres)
@@ -174,12 +177,15 @@ end
 
 
 """Get premodel (as a cset, not crel) by primary key ID"""
-function get_premodel(db::LibPQ.Connection, i::Int)::Pair{Sketch, StructACSet}
-  z = columntable(execute(db, """SELECT Sketch.jdump AS f, Premodel.jdump as p
+function get_premodel(db::LibPQ.Connection, i::Int)::Tuple{Sketch, StructACSet, Defined}
+  z = columntable(execute(db, """SELECT Sketch.jdump AS f, Premodel.jdump as p,
+                                                           Premodel.def
     FROM Premodel JOIN Sketch USING (Sketch_id) WHERE Premodel_id=\$1""",[i]))
   sketch = sketch_from_json(z[:f][1])
   modl = parse_json_acset(sketch.crel, z[:p][1])
-  return sketch => crel_to_cset(sketch, modl)[1]
+  obfun = split(z[:def][1], "|") # bad news if someone names a table with |
+  obs, funs = [Set(Symbol.(split(x, ","))) for x in obfun]
+  return (sketch, crel_to_cset(sketch, modl)[1], obs=>funs)
 end
 
 """Get Model by primary key ID"""

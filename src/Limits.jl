@@ -24,7 +24,7 @@ QueryRes A  B  C
 
 Because the functions are partial in the premodel, there may be limit objects
 that will be discovered to exist (by merging elements or adding new connections)
-So the query result is a lower bound on the number of elements in the apex.
+So the query result is a *lower* bound on the number of elements in the apex.
 
 This means we expect there to be two objects in the limit object D.
 If an element already exists with the same legs, then we are good. If an element
@@ -34,45 +34,26 @@ still add a new element but note that these two may be merged at a later point.
 
 """
 function compute_cones!(S::Sketch, J::StructACSet, eq::EqClass, ns::NewStuff,
-                        w::Weights)::Tuple{Bool,Bool}
+                        d::Defined)::Tuple{Bool,Bool}
   changed = false
-  for c in filter(c->!isempty(c.legs), S.cones)
-    cchanged, cfail = compute_cone!(S, J, c, ns, eq, w)
+  for c in filter(c -> c.apex ∉ d[1], S.cones)
+    cchanged, cfail = compute_cone!(S, J, c, ns, eq, d)
     changed |= cchanged
     if cfail return (changed, true, m) end
   end
   return changed, false
 end
 
-# """
-# Special case treated separately. Modifies `m` and `eq`.
-# Returns whether or not it changed anything.
-# """
-# function empty_cone!(J::StructACSet, apx::Symbol, m::NewStuff, eq::EqClass
-#                     )::Bool
-#   changed = false
-#   apts = collect(parts(J, apx))
-#   if isempty(apts) && isempty(m.ns[apx])
-#     m.ns[apx][nothing] = NewElem()
-#     return true
-#   else
-#     for (p1, p2) in Iterators.product(apts, apts)
-#       if !in_same_set(eq[apx], p1, p2)
-#         union!(eq[apx], p1, p2)
-#         changed |= true
-#       end
-#     end
-#     return changed
-#   end
-# end
-
 """
-Modifies `m` and `eq`
+Modifies `m`, `eq`, and `d`
 
 Check/enforce the following cone properties in this order:
 1. Two cone apex elements are equal if their corresponding leg values match.
 2. Same as (1), but in the other direction.
 3. For every pattern match of the cone's diagram in J, there is a cone element.
+
+If we do this process and all objects/arrows in the cone's diagram are defined,
+then the limit object itself is fully defined (cannot change in cardinality).
 
 (1)/(2) update `eq`, whereas information from (3) is added to the `Modify`
 
@@ -80,14 +61,15 @@ Dream: we can somehow only query 'newly added' information
 
 Returns whether it changed anything and whether it failed.
 """
-function compute_cone!(S::Sketch, J::StructACSet, cone_::Cone, ns::NewStuff,
-                       eq::EqClass, w::Weights)::Pair{Bool, Bool}
+function compute_cone!(S::Sketch, J::StructACSet, cone_::Cone,
+                       eq::EqClass, d::Defined)::Pair{Bool, Bool}
+  cone_.apex ∉  d[1] || error("don't compute cone for something defined! $J $d")
   verbose, changed = false, false
-  cchange, cfail, cones = cone_eqs!(S, J, cone_, eq, w)
+  cchange, cfail, cones = cone_eqs!(S, J, cone_, eq)
   changed |= cchange
   if cfail return changed => true end
   # look for instances of the pattern
-  query_results = query_cone(S, J, cone_, eq, w) #query(J, cone_query(cone_))
+  query_results = query_cone(S, J, cone_, eq) #query(J, cone_query(cone_))
   for res in query_results
     length(res) == length(cone_.legs) || error("Bad res $res from query")
     resv = Vector{Int}(collect(res))
@@ -120,7 +102,7 @@ end
 Look for instances of a cone's diagram in a premodel
 Modifies w
 """
-function query_cone(S::Sketch, J::StructACSet, c::Cone, eq::EqClass, w::Weights
+function query_cone(S::Sketch, J::StructACSet, c::Cone, eq::EqClass,
                    )::Vector{Vector{Int}}
   res = [[]]
   verbose =  false
@@ -134,11 +116,6 @@ function query_cone(S::Sketch, J::StructACSet, c::Cone, eq::EqClass, w::Weights
     # We can immediately filter possible values based on self-edges in diagram
     for self_e in incident(c.d, i, :tgt) ∩ incident(c.d, i, :src)
       self_e_name = c.d[self_e, :elabel]
-      e_src = add_srctgt(self_e_name)[1]
-      for i in setdiff(parts(J, c.d[:vlabel][i]), J[e_src])
-        w[self_e_name => i] += 1
-      end
-
       eqs = filter(x -> has_map(S, J, self_e_name, x, x, eq), eqs)
     end
     # any edges w/ tables we've seen so far in/out of current one constrain us
@@ -149,11 +126,6 @@ function query_cone(S::Sketch, J::StructACSet, c::Cone, eq::EqClass, w::Weights
         fail = false
         for e in es_in
           e_name, e_src = [c.d[e, x] for x in [:elabel, :src]]
-
-          # for i in setdiff(old_res[e_src], J[add_srctgt(e_name)[1]])
-          #   w[e_name => i] += 1
-          # end
-
           if !has_map(S, J, e_name, old_res[e_src], new_val, eq)
             if verbose println("No match: or $old_res, nv $new_val, e $e") end
             fail = true
@@ -187,7 +159,7 @@ forbidden).
 
 Modifies `eq` and `w`.
 """
-function cone_eqs!(S::Sketch, J::StructACSet, c::Cone, eq::EqClass, w::Weights
+function cone_eqs!(S::Sketch, J::StructACSet, c::Cone, eq::EqClass,
                   )::Tuple{Bool, Bool, Dict{Vector{Int}, Int}}
   changed, verbose = false, false
   eqclasses_legs = Vector{Int}[]
@@ -203,13 +175,10 @@ function cone_eqs!(S::Sketch, J::StructACSet, c::Cone, eq::EqClass, w::Weights
         [add_rel!(J, leg, e, only(legvals)) for e in eqs]
         push!(eqclass_legs, only(legvals))
       elseif isempty(legvals)
-        for eqcval in eqs
-          w[leg=>eqcval] += 1
-        end
         push!(eqclass_legs, 0)
       elseif length(legvals) > 1
         # all the elements in this leg are equal
-        if rigid && tab ∈ free_obs(S)
+        if tab ∈ d[1]
           return (changed, true, Dict{Vector{Int}, Int}())
         else
           for (lv1, lv2) in Iterators.product(legvals, legvals)
@@ -309,11 +278,11 @@ There are also possibilities to consider from the apex side:
     be. Thus we need a way to fail completely (given by the `nothing` option).
 """
 function compute_cocones!(S::Sketch, J::StructACSet, eq::EqClass,
-                          new_update::NewStuff, w::Weights
+                          new_update::NewStuff, d::Defined
                          )::Tuple{Bool,Bool,LoneCones}
   changed, lone_cone = false, LoneCones()
   for c in filter(c->!isempty(c.legs), S.cocones)
-    cchanged, cfailed, res = compute_cocone!(S, J, c, new_update, eq, w)
+    cchanged, cfailed, res = compute_cocone!(S, J, c, new_update, eq, d)
     if cfailed return (changed, true, lone_cone) end
     changed |= cchanged
     lone_cone[c.apex] = res  # assumes there aren't multiple cones on same vert
@@ -326,11 +295,11 @@ Unlike cones, where knowing partial maps can give you matches, we require all
 maps in a cocone diagram to be completely known in order to determine cocone
 elements.
 
-Updates `m` and `eq` and `w`
+Updates `m` and `eq` and `d`
 """
 function compute_cocone!(S::Sketch, J::StructACSet, co_cone::Cone,
-    nu::NewStuff, eqc::EqClass, w::Weights)::Tuple{Bool,Bool, Set{Int}}
-
+    nu::NewStuff, eqc::EqClass, d::Defined)::Tuple{Bool,Bool, Set{Int}}
+  co_cone.apex ∉ d[1] || error("Don't compute cocone that's defined $J $d")
   verbose, changed = false, false
   diag_objs = co_cone.d[:vlabel]
   diag_homs = ne(co_cone.d)== 0 ? Tuple{Symbol,Int,Int}[] :
@@ -349,9 +318,6 @@ function compute_cocone!(S::Sketch, J::StructACSet, co_cone::Cone,
     sreps = [find_root!(eqc[src(S,e)],x) for x in J[add_srctgt(e)[1]]]
     missin = setdiff(eq_reps(eqc[src(S,e)]), sreps)
     if !isempty(missin)
-      for miss in missin
-        w[e=>miss]+=.1
-      end
       # println("cannot compute cocone bc $e does not map $missin anywhere")
       return changed, false, Set{Int}()
     end
@@ -460,14 +426,13 @@ function compute_cocone!(S::Sketch, J::StructACSet, co_cone::Cone,
     tgts1, tgts2 = [apex_tgt_dict[e] for e in es]
     conflict = intersect(tgts1, tgts2)
     if !isempty(conflict)
-      #evals1, evals2 = [[apex_obs[i] for i in e] for e in es]
-      #println("FAILING b/c $evals1 and $evals2 both map to $conflict ")
-      #show(stdout, "text/plain",  J_orig)
       return changed, true, Set{Int}()
     end
   end
 
-  seen_apex_tgts = isempty(apex_tgt_dict) ? Set{Int}() : union(values(apex_tgt_dict)...)
+  seen_apex_tgts = (isempty(apex_tgt_dict) ? Set{Int}()
+                                           : union(values(apex_tgt_dict)...))
+
   return changed, false, Set(
     collect(setdiff(parts(J, co_cone.apex), seen_apex_tgts)))
 end
