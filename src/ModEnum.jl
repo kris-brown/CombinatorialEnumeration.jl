@@ -1,5 +1,5 @@
 module ModEnum
-export chase_step, chase_step_db, chase_set, sat_eqs, path_eqs2!, prop_path_eq_info!
+export chase_step, chase_step_db, chase_set, sat_eqs, path_eqs!, prop_path_eq_info!
 
 using ..Sketches
 using ..DB
@@ -8,8 +8,7 @@ using ..Limits
 
 using Catlab.WiringDiagrams, Catlab.CategoricalAlgebra
 using Catlab.Programs.RelationalPrograms: parse_relation_diagram
-using Combinatorics
-using DataStructures
+using Combinatorics, DataStructures, Distributed
 using LibPQ, Tables
 
 """
@@ -40,7 +39,6 @@ Take a sketch and a premodel and perform one chase step.
 function chase_step(S::Sketch, J::StructACSet, d::Defined
                     )::Union{Nothing,Tuple{StructACSet, Defined, Branch}}
   # Initialize variables
-  println("chase start d $d")
   verbose = false
   fail, J = handle_zero_one(S, J, d) # doesn't modify J
   if fail return nothing end
@@ -50,7 +48,7 @@ function chase_step(S::Sketch, J::StructACSet, d::Defined
   # this loop might not be necessary. If one pass is basically all that's
   # needed, then this loop forces us to run 2x loops
   for cnt in Iterators.countfrom()
-    if cnt > 1 println("\tchase step iter #$cnt") end
+    if verbose && cnt > 1 println("\tchase step iter #$cnt") end
     if cnt > 10 error("TOO MANY ITERATIONS") end
     changed, failed, J, lc, d = propagate_info(S, J, d)
     if failed return nothing end
@@ -63,7 +61,9 @@ function chase_step(S::Sketch, J::StructACSet, d::Defined
   # Flag (co)cones as defined, now that we've added the newstuff
   for c in filter(c->c.apex ∉ d[1], vcat(S.cones,S.cocones))
     if (c.d[:vlabel] ⊆ d[1]) && (c.d[:elabel] ⊆ d[2])
-      println("flagging $(c.apex) as defined: $(sizes(S, J)) \n\td $d")
+      if verbose
+        println("flagging $(c.apex) as defined: $(sizes(S, J)) \n\td $d")
+      end
       push!(d[1], c.apex)
       union!(d[2], Set(last.(c.legs)))
     end
@@ -75,8 +75,6 @@ function chase_step(S::Sketch, J::StructACSet, d::Defined
   if fail return nothing end
   pri = priority(S, d, [k for (k,v) in lc if !isempty(v)])
   if isnothing(pri) return (J, d, b_success) end
-  println("priority $pri")
-  println("lc $lc")
   i::Union{Int,Nothing} = haskey(lc, pri) ? first(collect(lc[pri])) : nothing
   return (J, d, get_possibilities(S, J, d, pri, i))
 end
@@ -114,10 +112,10 @@ related to newly added elements).
 """
 function propagate_info(S::Sketch, J::StructACSet, d::Defined
           )::Tuple{Bool, Bool, StructACSet, LoneCones, Defined}
-  verbose, changed = true, false
+  verbose, changed = false, false
   eq = init_eq(S, J) # trivial equivalence classes
   # Path Eqs
-  pchanged, pfail = path_eqs2!(S,J,eq,d)
+  pchanged, pfail = path_eqs!(S,J,eq,d)
   changed |= pchanged
   if pfail return (changed, true, J, LoneCones(), d) end
   if verbose println("\tpchanged $pchanged: $(sizes(S, J)) ") end
@@ -213,7 +211,7 @@ end
 """Explore a premodel and add its results to the DB."""
 function chase_step_db(db::LibPQ.Connection, premodel_id::Int,
                        redo::Bool=false)::Pair{Bool, Vector{Int}}
-  verbose = false
+  verbose = 1
   # Check if already done
   if !redo
     z = columntable(execute(db, """SELECT 1 FROM Premodel WHERE
@@ -232,12 +230,13 @@ function chase_step_db(db::LibPQ.Connection, premodel_id::Int,
   end
 
   S, J_, d_ = get_premodel(db, premodel_id)
-  if verbose println("CHASING PREMODEL #$premodel_id: $(sizes(S, J_))") end
+  if verbose > 0 println("CHASING PREMODEL #$premodel_id: $(sizes(S, J_))") end
   # show(stdout, "text/plain", crel_to_cset(S, J_)[1])
   cs_res = chase_step(S, create_premodel(S, J_), d_)
 
   # Failure
   if isnothing(cs_res)
+    if verbose > 0 println("\t#$premodel_id: Fail") end
     set_failed(db, premodel_id, true)
     return false => Int[]
   end
@@ -252,10 +251,10 @@ function chase_step_db(db::LibPQ.Connection, premodel_id::Int,
 
   # Check we have a real model
   if branch == b_success
-    if verbose println("\t\tFOUND MODEL") end
+    if verbose > 0 println("\t\tFOUND MODEL") end
     return true => [add_model(db, S, J, d, chased_id)]
   else
-    if verbose println("\tBranching on $branch") end
+    if verbose > 0 println("\tBranching #$premodel_id on $(branch.branch)") end
     res = Int[]
     for (e,i,mod) in branch.poss
       (J__, d__) = deepcopy((J,d))
@@ -305,9 +304,10 @@ function chase_set(db::LibPQ.Connection,S::Sketch,
     if isempty(todo)
       break
     else
-      for mdl in todo # Threads.@threads?
-        chase_step_db(db, mdl)
-      end
+      pmap(mdl -> chase_step_db(db, mdl), todo)
+      # for mdl in todo # Threads.@threads?
+      #   chase_step_db(db, mdl)
+      # end
     end
   end
 end
@@ -326,72 +326,7 @@ a₃  -> b₄
 Because a₁ is mapped to b₁ and b₃, we deduce b₁=b₃. If the equivalence relation
 has it such that a₂=a₃, then we'd likewise conclude b₂=b₄
 
-Subtlety: this could equate an existing object with a proposed object in a
-Modify. Or it could equate two new objects with each other.
-
-Updates `eqclass` - returns a new `m` to replace the old
-"""
-# function fun_eqs!(S::Sketch, J::StructACSet, eqclass::EqClass,
-#                   d::Defined)::Tuple{Bool, Bool, NewStuff}
-#   changed = false
-#   J_cardinalities = Dict([v=>nparts(J,v) for v in S.schema[:vlabel]])
-#   update_crel!(J, m)
-#   [[push!(eqclass[v]) for _ in J_cardinalities[v]:(nparts(J, v)-1)]
-#     for v in S.schema[:vlabel]]
-#   fchanged, ffail = fun_eqs!(S, J, eqclass, d)
-#   if ffail return changed, true, m end  # possibly fail
-#   changed |= fchanged
-#   merge!(S, J, eqclass) # apply the quotient
-
-#   # show(stdout, "text/plain", crel_to_cset(S, J)[1])
-
-#   # ns = NewStuff()
-#   # for (ti, tab) in enumerate(S.schema[:vlabel])
-#   #   #println("tab $tab $((J_cardinalities[tab]+1):nparts(J, tab)))")
-#   #   for (ns_ind, J_ind) in enumerate((J_cardinalities[tab]+1):nparts(J, tab))
-#   #     #println("ns_ind $ns_ind J_ind $J_ind")
-#   #     ns.ns[tab][ns_ind] = NewElem()
-#   #     # get maps in
-#   #     for e in S.schema[incident(S.schema, ti, :tgt), :elabel]
-#   #       s, t = add_srctgt(e)
-#   #       #println("CHECKING map in $e ($(J[incident(J, J_ind, t), s]))")
-#   #       for val_in in J[incident(J, J_ind, t), s]
-#   #         push!(ns.ns[tab][ns_ind].map_in[e], val_in)
-#   #       end
-#   #     end
-#   #     # get maps out
-#   #     for e in S.schema[incident(S.schema, ti, :src), :elabel]
-#   #       s, t = add_srctgt(e)
-#   #       #println("CHECKING map in $e ($(J[incident(J, J_ind, s), t]))")
-#   #       for val_out in J[incident(J, J_ind, s), t]
-#   #         if length(val_out) == 1
-#   #           ns.ns[tab][ns_ind].map_out[e] = only(val_out)
-#   #         elseif length(val_out) > 1
-#   #           error("We just quotiented by functionality")
-#   #         end
-#   #       end
-#   #     end
-#   #   end
-#   # end
-#   crel_to_cset(S, J)
-#   # Delete the purely new stuff
-#   # [rem_parts!(J, tab, (c+1):nparts(J, tab)) for (tab, c) in
-#   #  pairs(J_cardinalities)]
-#   # for e in S.schema[:elabel]
-#   #   cols = zip([J[z] for z in add_srctgt(e)]...)
-#   #   del_parts = [i for (i, (x,y)) in enumerate(cols) if x == 0 || y == 0]
-#   #   rem_parts!(J, e, del_parts)
-#   # end
-#   # new_J_cards = Dict([v=>nparts(J,v) for v in S.schema[:vlabel]])
-#   # for v in S.schema[:vlabel]
-#   #   new_J_cards[v] <= J_cardinalities[v] || error("Extra $v in $J")
-#   # end
-
-#   return changed, false, ns
-# end
-
-"""
-Return whether it changes the eqclass or fails. Applies quotient
+Quotients by the equivalence class at the end
 """
 function fun_eqs!(S::Sketch, J::StructACSet, eqclass::EqClass, def::Defined
                  )::Pair{Bool,Bool}
@@ -422,6 +357,9 @@ function fun_eqs!(S::Sketch, J::StructACSet, eqclass::EqClass, def::Defined
   merge!(S, J, eqclass)
   return changed => false
 end
+
+# Path equality
+###############
 """
 Use set of path equalities starting from the same vertex to possibly resolve
 some foreign key values.
@@ -441,7 +379,7 @@ each object in the root's table).
   is TOTALLY defined).
 - Iterate until no information is left to be gained
 """
-function path_eqs2!(S::Sketch, J::StructACSet, eqclasses::EqClass,
+function path_eqs!(S::Sketch, J::StructACSet, eqclasses::EqClass,
                     d::Defined)::Pair{Bool, Bool}
   changed = false
   for (s, eqd) in zip(S.schema[:vlabel], S.eqs)
@@ -528,88 +466,6 @@ function set_fks!(S, J, d, eqd, poss, t_ind)::Bool
   return changed
 end
 
-"""
-Modifies J, eqclasses, and w.
-
-If we have two paths A->B, p₁₁...p₁ₙ and p₂₁...p₂ₙ, then, if, for a starting
-point in A:
-1.) one of the paths is completely determined
-2.) the other path is determined entirely except for the last relation
-
-We can set the value of the last relation to the value of the determined one.
-
-If both paths are determined, the final terms can be set to be equivalent, if
-this is allowed (otherwise, return `true`).
-"""
-# function path_eqs!(S::Sketch, J::StructACSet, eqclasses::EqClass,
-#                    d::Defined)::Pair{Bool, Bool}
-#   verbose, changed = false, false
-#   for (eqn, p, q) in S.eqs # could be done in parallel
-#     if verbose println("processing equality $eqn") end
-#     src_tab, tgt_tab = src(S, p[1]), tgt(S, p[end])
-#     eqc = eq_reps(eqclasses[src_tab])
-#     for x in eqc # can be parallel
-#       res_p, is_penult_p = eval_path!(p, J, x)
-#       res_q, is_penult_q = eval_path!(q, J, x)
-#       if verbose println("""x $x res_p $res_p (is_penult $is_penult_p)
-#         res_q $res_q (is_penult $is_penult_q)""") end
-#       real_p, real_q = (!isnothing).([res_p, res_q])
-#       if is_penult_p && real_q && !is_penult_q
-#         if verbose println("$eqn (rev) set $(last(p)): $res_p -> $res_q") end
-#         changed = true
-#         add_rel!(J, last(p), res_p, res_q)
-#       elseif is_penult_q && real_p && !is_penult_p
-#         if verbose println("$eqn (fwd) set $(last(q)): $res_q -> $res_p") end
-#         changed = true
-#         add_rel!(J, last(q), res_q, res_p)
-#       elseif real_p && real_q && !(is_penult_p || is_penult_q) && !in_same_set(
-#               eqclasses[tgt_tab],res_p,res_q)
-#         changed = true
-#         if tgt_tab ∈ d[1]
-#           if verbose
-#             println("Fail: tried to equate $tgt_tab #$res_p and $res_q")
-#           end
-#           return changed => true
-#         else
-#           println("$eqn set $tgt_tab: $res_p == $res_q")
-#           union!(eqclasses[tgt_tab], res_p, res_q)
-#         end
-#       end
-#     end
-#   end
-#   return changed => false
-# end
-
-# function sat_eqs(S::Sketch,J::StructACSet)::Bool
-#   chg, err = path_eqs!(S, J, init_eq(S,J))
-#   return !(chg || err)
-# end
-
-"""
-Compose relations starting as functions.
-
-Because `eq_fun` quotients by functionality, we only need to pick, for a
-relation A->B and  aᵢ, a single related bⱼ (if any exists).
-
-This process terminates when nothing is related in the codomain. If this happens
-right before the *last* relation, then we note this with a `true` boolean flag.
-
-Modifies w
-"""
-function eval_path!(pth::Vector{Symbol}, J::StructACSet, x::Int,
-                   )::Pair{Union{Nothing, Int}, Bool}
-  prev_x = x
-  for (i, edge) in enumerate(pth)
-    edgesrc, edgetgt = add_srctgt(edge)
-    if isnothing(x)
-      return nothing => false
-    else
-      prev_x, inc = x, incident(J, x, edgesrc)
-      x = isempty(inc) ? nothing : J[first(inc), edgetgt]
-    end
-  end
-  return isnothing(x) ? prev_x => true : x => false
-end
 
 # Misc
 ######
@@ -648,31 +504,8 @@ function combos_below(m::Int, n::Int)::Vector{Vector{Int}}
   return sort(collect(res))
 end
 
-"""Check if each coproduct as |A|+|B|, etc. """
-function discrete_cardinality_check(S::Sketch, J::StructACSet)::Bool
-  verbose = false
-  for c in S.cones
-    if nv(c.d) == 0 && nparts(J, c.apex) != 1
-      if verbose println("Empty cone $(c.apex) doesn't have one elem") end
-      return false
-    elseif ne(c.d) == 0 && nparts(J, c.apex) != prod([nparts(J,c.d[x,:vlabel]) for x in first.(c.legs)])
-      if verbose println("Cone $(c.apex) doesn't have $(prod([nparts(J,c.d[x,:vlabel]) for x in first.(c.legs)]))") end
-      return false
-    end
-  end
-  for c in S.cocones
-    if nv(c.d) == 0 && nparts(J, c.apex) != 0
-      if verbose println("Empty cocone $(c.apex) has more than 0 elem") end
-      return false
-    elseif ne(c.d) == 0 && nparts(J, c.apex) != sum([nparts(J,c.d[x, :vlabel]) for x in first.(c.legs)])
-      if verbose println("Empty cone $(c.apex) doesn't have $(sum([nparts(J,c.d[x, :vlabel]) for x in first.(c.legs)]))") end
-      return false
-    end
-  end
-  return true
-end
-
-
+# Branching decision logic
+##########################
 """
 Branch priority - this is an art b/c patheqs & cones are two incommensurate ways
 that a piece of information could be useful. We'll prioritize cones:
@@ -683,8 +516,6 @@ that a piece of information could be useful. We'll prioritize cones:
 5: Defined->Undefined (no cone, weigh by # of path eqs)
 6: Undefined -> Defined (weigh by path eqs)
 7: Undefined -> Undefined (weigh by path eqs)
-
-
 """
 function priority(S::Sketch, d::Defined, cco::Vector{Symbol}
                  )::Union{Nothing, Symbol}
@@ -693,13 +524,10 @@ function priority(S::Sketch, d::Defined, cco::Vector{Symbol}
   ls = limit_scores(S, d)
   hs = (a,b) ->  [(h, hom_score(S,ls, h)) for h in hom_set(S,a,b) if h ∉ dhoms]
   hdd = hs(dobs,dobs)
-  println("dhoms $dhoms\nhdd $hdd")
   hddl = collect(filter(x->x[2][1]>0, hdd))
   if !isempty(hddl)
     return first(last(sort(hddl, by=x->x[2][1]))) # CASE 1
   elseif !isempty(cco)
-    println("last(collect(cco)) $(last(collect(cco)))")
-    # don't we want to order the cocone obs by priority?
     return first(sort(cco, by=cocone_score(S, d))) # CASE 2
   end
   hdu =hs(dobs,udobs)
@@ -735,8 +563,8 @@ end
 hom_score(S::Sketch, ls::Dict{Symbol, Int}, h::Symbol) = (
   limit_score(S,ls,h), eq_score(S,h))
 
-eq_score(S::Sketch, h::Symbol) = sum([
-  count(==(h), d[:elabel]) for d in S.eqs])
+eq_score(S::Sketch, h::Symbol) = sum([count(==(h), d[:elabel]) for d in S.eqs])
+
 """
 Evaluate the desirability of knowing more about a hom based on limit
  definedness. Has precomputed desirability of each limit as an argument.
@@ -747,7 +575,8 @@ limit_score(S::Sketch,ls::Dict{Symbol, Int},h::Symbol) = sum(
 limit_scores(S::Sketch, d::Defined) = Dict([c.apex=>limit_obj_definedness(d,c)
                                 for c in vcat(S.cones,S.cocones)])
 """
-Evaluate undefinedness of a limit object (# of undefined objs, # of undefined homs).
+Evaluate undefinedness of a limit object:
+  (# of undefined objs, # of undefined homs)
 We should focus on resolving morphisms of almost-defined limit objects, so we
 give a high score to something with a little bit missing, low score to things
 with lots missing, and zero to things that are fully defined.
