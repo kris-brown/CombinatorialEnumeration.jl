@@ -33,11 +33,11 @@ If is an element with information that partially matches a query result, we
 still add a new element but note that these two may be merged at a later point.
 
 """
-function compute_cones!(S::Sketch, J::StructACSet, eq::EqClass, ns::NewStuff,
+function compute_cones!(S::Sketch, J::StructACSet, eq::EqClass, #ns::NewStuff,
                         d::Defined)::Tuple{Bool,Bool}
   changed = false
   for c in filter(c -> c.apex ∉ d[1], S.cones)
-    cchanged, cfail = compute_cone!(S, J, c, ns, eq, d)
+    cchanged, cfail = compute_cone!(S, J, c, eq, d)
     changed |= cchanged
     if cfail return (changed, true, m) end
   end
@@ -65,7 +65,7 @@ function compute_cone!(S::Sketch, J::StructACSet, cone_::Cone,
                        eq::EqClass, d::Defined)::Pair{Bool, Bool}
   cone_.apex ∉  d[1] || error("don't compute cone for something defined! $J $d")
   verbose, changed = false, false
-  cchange, cfail, cones = cone_eqs!(S, J, cone_, eq)
+  cchange, cfail, cones = cone_eqs!(S, J, cone_, eq, d)
   changed |= cchange
   if cfail return changed => true end
   # look for instances of the pattern
@@ -75,21 +75,22 @@ function compute_cone!(S::Sketch, J::StructACSet, cone_::Cone,
     resv = Vector{Int}(collect(res))
     # For any new diagram matches that we do not have an explicit apex elem for:
     if !haskey(cones, resv)
-      ne = NewElem()
+      ne = add_part!(J, cone_.apex)
       for (f, v) in zip(last.(cone_.legs), resv)
-        ne.map_out[f] = v
+        add_rel!(S, J, d, f, ne, v)
       end
+      changed=true
       # If we don't already have a NewElem with these legs...
-      new_elms = collect(values(ns.ns[cone_.apex]))
-      if verbose
-        println("Checking if res $res is in existing ns $(new_elms)")
-      end
-      if !any([all([in_same_set(eq[tgt(S,f)], ne.map_out[f], c.map_out[f])
-               for f in last.(cone_.legs)]) for c in new_elms])
-        changed = true
-        if verbose println("NEW APEX $res") end
-        ns.ns[cone_.apex][resv] = ne
-      end
+      # new_elms = collect(values(ns.ns[cone_.apex]))
+      # if verbose
+      #   println("Checking if res $res is in existing ns $(new_elms)")
+      # end
+      # if !any([all([in_same_set(eq[tgt(S,f)], ne.map_out[f], c.map_out[f])
+      #          for f in last.(cone_.legs)]) for c in new_elms])
+      #   changed = true
+      #   if verbose println("NEW APEX $res") end
+      #   ns.ns[cone_.apex][resv] = ne
+      # end
     else
       # anything to do?
     end
@@ -159,7 +160,7 @@ forbidden).
 
 Modifies `eq` and `w`.
 """
-function cone_eqs!(S::Sketch, J::StructACSet, c::Cone, eq::EqClass,
+function cone_eqs!(S::Sketch, J::StructACSet, c::Cone, eq::EqClass, d::Defined,
                   )::Tuple{Bool, Bool, Dict{Vector{Int}, Int}}
   changed, verbose = false, false
   eqclasses_legs = Vector{Int}[]
@@ -172,7 +173,7 @@ function cone_eqs!(S::Sketch, J::StructACSet, c::Cone, eq::EqClass,
       s, t = add_srctgt(leg)
       legvals = Set(vcat(J[incident(J, eqs, s), t]...))
       if length(legvals) == 1
-        [add_rel!(J, leg, e, only(legvals)) for e in eqs]
+        [add_rel!(S, J, d, leg, e, only(legvals)) for e in eqs]
         push!(eqclass_legs, only(legvals))
       elseif isempty(legvals)
         push!(eqclass_legs, 0)
@@ -278,11 +279,10 @@ There are also possibilities to consider from the apex side:
     be. Thus we need a way to fail completely (given by the `nothing` option).
 """
 function compute_cocones!(S::Sketch, J::StructACSet, eq::EqClass,
-                          new_update::NewStuff, d::Defined
-                         )::Tuple{Bool,Bool,LoneCones}
+                          d::Defined)::Tuple{Bool,Bool,LoneCones}
   changed, lone_cone = false, LoneCones()
-  for c in filter(c->!isempty(c.legs), S.cocones)
-    cchanged, cfailed, res = compute_cocone!(S, J, c, new_update, eq, d)
+  for c in filter(c->c.apex ∉ d[1], S.cocones)
+    cchanged, cfailed, res = compute_cocone!(S, J, c, eq, d)
     if cfailed return (changed, true, lone_cone) end
     changed |= cchanged
     lone_cone[c.apex] = res  # assumes there aren't multiple cones on same vert
@@ -298,7 +298,7 @@ elements.
 Updates `m` and `eq` and `d`
 """
 function compute_cocone!(S::Sketch, J::StructACSet, co_cone::Cone,
-    nu::NewStuff, eqc::EqClass, d::Defined)::Tuple{Bool,Bool, Set{Int}}
+                         eqc::EqClass, d::Defined)::Tuple{Bool,Bool, Set{Int}}
   co_cone.apex ∉ d[1] || error("Don't compute cocone that's defined $J $d")
   verbose, changed = false, false
   diag_objs = co_cone.d[:vlabel]
@@ -402,23 +402,21 @@ function compute_cocone!(S::Sketch, J::StructACSet, co_cone::Cone,
             println("Cocone added $leg_name: $ind_val -> $apex_rep")
           end
           changed = true
-          add_rel!(J, leg_name, ind_val, apex_rep)
+          add_rel!(S, J, d, leg_name, ind_val, apex_rep)
         end
       end
     end
 
     if length(apex_tgts)==0
-
-      if !any([all([isempty(c.map_in[f]) || isempty(ne.map_in[f]) ||
-                    in_same_set(eqc[src(S,f)],
-                                only(ne.map_in[f]), only(c.map_in[f]))
-              for f in last.(co_cone.legs)])
-              for c in values(nu.ns[co_cone.apex])])
+      new_ind = add_part!(J, co_cone.apex)
+      for (k, vs) in ne.map_in
+        for v in vs
+          add_rel!(S, J, d, k, v, new_ind)
+        end
+      end
         changed = true
-        nu.ns[co_cone.apex][eqset] = ne
       end
     end
-  end
 
   # Fail if necessarily distinct groups map to the same apex element
   eqset_pairs = collect(Iterators.product(eqsets, eqsets))

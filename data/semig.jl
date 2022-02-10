@@ -11,6 +11,7 @@ n           | 1 | 2  | 3     | 4
 # semi (iso)| 1 | 5  | 24    | 184 (not 188?!)
 # cset      | 1 | 16 | 19683 | 4294967296
 
+# looked @ | 1 |  ?  | 399
 """
 
 p1p2, p2p3, idk, kid = map(Symbol, ["π₁×π₂","π₂×π₃","id×k","k×id"])
@@ -170,8 +171,10 @@ db = init_db(reset=true);
 
 Jinit = create_premodel(S, [:s=>2]);
 chase_set(db, S, Pair{StructACSet, Defined}[Jinit=>init_defined(S, Jinit)], 2)
-i1 = add_premodel(db, S, Jinit, init_defined(S,Jinit))
+Jinit = create_premodel(S, [:s=>3]);
+chase_set(db, S, Pair{StructACSet, Defined}[Jinit=>init_defined(S, Jinit)], 3)
 
-i2s = chase_step_db(db, i1)
+ms = get_models(db, S, 3);
+
 
 # WHY is s3 #15  not associative? kid_ = 2 not 3

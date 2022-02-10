@@ -304,16 +304,17 @@ function add_newelem!(J::StructACSet, ob::Symbol, n_e::NewElem)
 end
 
 
-function update_crel!(J::StructACSet, m::Modify)
+function update_crel!(S::Sketch, J::StructACSet, d::Defined, m::Modify)
   update_crel!(J, m.newstuff)
   for (k, i, j) in m.update
-    add_rel!(J, k , i, j)
+    add_rel!(S, J, d, k , i, j)
   end
 end
 
-add_rel!(J::StructACSet, f::Symbol, i::Int, j::Int) =
+function add_rel!(S::Sketch, J::StructACSet, d::Defined, f::Symbol, i::Int, j::Int)
   add_part!(J, f; Dict(zip(add_srctgt(f), [i,j]))...)
-
+  update_defined!(S, J, d, f)
+end
 
 # Querying CRel
 ################
@@ -336,7 +337,6 @@ end
 function init_defined(S::Sketch, J::StructACSet)::Defined
   d = free_obs(S) => Set{Symbol}()
   update_defined!(S, J, d)
-  println("INIT d $d")
   return d
 end
 """
@@ -347,17 +347,16 @@ Return a new Defined object with updates:
    handle that here)
 Return whether a change was made or not
 """
-function update_defined!(S::Sketch, J::StructACSet, d::Defined)::Bool
+function update_defined!(S::Sketch, J::StructACSet, d::Defined,
+                         f::Union{Symbol,Nothing}=nothing)::Bool
   _, dhom = d
   changed = false
-  for h in setdiff(S.schema[:elabel], dhom)
+  for h in setdiff(isnothing(f) ? S.schema[:elabel] : [f], dhom)
     s = src(S,h)
-    if s∈d[1] && isempty(setdiff(parts(J, s), J[add_srctgt(h)[1]]))
-      # println("parts $(parts(J, src(S,h)))")
-      # println("J[addsrctgt[1] $(J[add_srctgt(h)[1]])")
+    if s ∈ d[1] && isempty(setdiff(parts(J, s), J[add_srctgt(h)[1]]))
       push!(dhom, h)
-      println("$h is now defined! ")
-      show(stdout, "text/plain", crel_to_cset(S, J)[1])
+      # println("$h is now defined! ")
+      # show(stdout, "text/plain", crel_to_cset(S, J)[1])
       changed |= true
     end
   end

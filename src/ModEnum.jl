@@ -42,7 +42,7 @@ function chase_step(S::Sketch, J::StructACSet, d::Defined
   # Initialize variables
   println("chase start d $d")
   verbose = false
-  fail, J = handle_zero_one(S, J) # doesn't modify J
+  fail, J = handle_zero_one(S, J, d) # doesn't modify J
   if fail return nothing end
 
   ns, lc = NewStuff(), LoneCones()
@@ -51,8 +51,8 @@ function chase_step(S::Sketch, J::StructACSet, d::Defined
   # needed, then this loop forces us to run 2x loops
   for cnt in Iterators.countfrom()
     if cnt > 1 println("\tchase step iter #$cnt") end
-    if cnt > 3 error("TOO MANY ITERATIONS") end
-    changed, failed, J, ns, lc, d = propagate_info(S, J, ns, d)
+    if cnt > 10 error("TOO MANY ITERATIONS") end
+    changed, failed, J, lc, d = propagate_info(S, J, d)
     if failed return nothing end
     if !changed break end
   end
@@ -68,35 +68,37 @@ function chase_step(S::Sketch, J::StructACSet, d::Defined
       union!(d[2], Set(last.(c.legs)))
     end
   end
-
-  if verbose println("adding to J $J \n ns $ns") end
-  crel_to_cset(S, J)
-  println("J Res "); show(stdout, "text/plain", crel_to_cset(S, J)[1])
-  fail, J = handle_zero_one(S, J) # doesn't modify J
+  # crel_to_cset(S, J)
+  # println("J Res "); show(stdout, "text/plain", crel_to_cset(S, J)[1])
+  fail, J = handle_zero_one(S, J, d) # doesn't modify J
+  update_defined!(S, J, d)
   if fail return nothing end
-  pri = priority(S, d, Set(keys(lc)))
+  pri = priority(S, d, [k for (k,v) in lc if !isempty(v)])
   if isnothing(pri) return (J, d, b_success) end
   println("priority $pri")
-  i::Union{Int,Nothing} = get(lc, pri, nothing)
-  return (J, d, get_possibilities(S, J, d, pri,i))
+  println("lc $lc")
+  i::Union{Int,Nothing} = haskey(lc, pri) ? first(collect(lc[pri])) : nothing
+  return (J, d, get_possibilities(S, J, d, pri, i))
 end
 
 """Set cardinalities of 0 and 1 objects correctly + maps into 1"""
-function handle_zero_one(S::Sketch, J::StructACSet)::Pair{Bool,StructACSet}
+function handle_zero_one(S::Sketch, J::StructACSet, d::Defined)::Pair{Bool,StructACSet}
   J = deepcopy(J)
   eq = init_eq(S, J)
 
   for t1 in one_ob(S)
+    push!(d[1], t1)
     unions!(eq[t1], collect(parts(J, t1)))
     if nparts(J, t1) == 0
       add_part!(J, t1)
     end
     for e in filter(e->tgt(S,e)==t1, S.schema[:elabel])
-      [add_rel!(J, e, i, 1) for i in parts(J, src(S, e))]
+      [add_rel!(S, J, d, e, i, 1) for i in parts(J, src(S, e))]
     end
   end
   merge!(S, J, eq)
   for t0 in zero_ob(S)
+    push!(d[1], t0)
     if nparts(J, t0) > 0
       return true => J
     end
@@ -111,7 +113,7 @@ be safely applied within a while loop (i.e. everything except for things
 related to newly added elements).
 """
 function propagate_info(S::Sketch, J::StructACSet, d::Defined
-          )::Tuple{Bool, Bool, StructACSet, NewStuff, LoneCones, Defined}
+          )::Tuple{Bool, Bool, StructACSet, LoneCones, Defined}
   verbose, changed = true, false
   eq = init_eq(S, J) # trivial equivalence classes
   # Path Eqs
@@ -140,7 +142,7 @@ function propagate_info(S::Sketch, J::StructACSet, d::Defined
   changed |= fchanged
   if ffail return (changed, true, J, LoneCones(), d) end
   if fchanged update_defined!(S,J,d) end
-  #cs = crel_to_cset(S, J) # will trigger a fail if it's nonfunctional
+  cs = crel_to_cset(S, J) # will trigger a fail if it's nonfunctional
   #if verbose show(stdout, "text/plain", cs[1]) end
 
   return (changed, false, J, lone_cones, d)
@@ -162,6 +164,7 @@ function get_possibilities(S::Sketch, J::StructACSet,  d::Defined, sym::Symbol,
   if isnothing(i) # branching on a foreign key
     src_tab, tgt_tab = src(S,sym), tgt(S,sym)
     esrc, _ = add_srctgt(sym)
+    # sym ∉ d[2] || error("$d but branching $sym: $src_tab -> $tgt_tab")
     u = first(setdiff(parts(J,src_tab), J[esrc]))
     # possibilities of setting `u`'s value of FK `e`
     subres = Poss[]
@@ -210,7 +213,7 @@ end
 """Explore a premodel and add its results to the DB."""
 function chase_step_db(db::LibPQ.Connection, premodel_id::Int,
                        redo::Bool=false)::Pair{Bool, Vector{Int}}
-  verbose = true
+  verbose = false
   # Check if already done
   if !redo
     z = columntable(execute(db, """SELECT 1 FROM Premodel WHERE
@@ -249,15 +252,14 @@ function chase_step_db(db::LibPQ.Connection, premodel_id::Int,
 
   # Check we have a real model
   if branch == b_success
-    println("\t\tFOUND MODEL")
+    if verbose println("\t\tFOUND MODEL") end
     return true => [add_model(db, S, J, d, chased_id)]
   else
-    println("\tBranching on $branch")
+    if verbose println("\tBranching on $branch") end
     res = Int[]
     for (e,i,mod) in branch.poss
       (J__, d__) = deepcopy((J,d))
-      update_crel!(J__, mod)
-      update_defined!(S,J__,d__)
+      update_crel!(S, J__, d__, mod)
       bstr = string((branch.branch, branch.val, e, i))
       push!(res, add_branch(db, S, bstr, chased_id, J__, d__))
     end
@@ -289,9 +291,12 @@ function chase_below(db::LibPQ.Connection, S::Sketch, n::Int; extra::Int=3,
   chase_set(db, S, ms, n+extra)
 end
 
-"""Keep processing until none remain"""
+"""
+Keep processing until none remain
+v is Vector{Pair{StructACSet,Defined}}
+"""
 function chase_set(db::LibPQ.Connection,S::Sketch,
-                   v::Vector{Pair{StructACSet,Defined}}, n::Int)::Nothing
+                   v::Vector, n::Int)::Nothing
   for (m,d) in v
     add_premodel(db, S, m, d)
   end
@@ -326,66 +331,67 @@ Modify. Or it could equate two new objects with each other.
 
 Updates `eqclass` - returns a new `m` to replace the old
 """
-function fun_eqs!(S::Sketch, J::StructACSet, m::NewStuff, eqclass::EqClass,
-                  d::Defined)::Tuple{Bool, Bool, NewStuff}
-  changed = false
-  J_cardinalities = Dict([v=>nparts(J,v) for v in S.schema[:vlabel]])
-  update_crel!(J, m)
-  [[push!(eqclass[v]) for _ in J_cardinalities[v]:(nparts(J, v)-1)]
-    for v in S.schema[:vlabel]]
-  fchanged, ffail = fun_eqs!(S, J, eqclass, d)
-  if ffail return changed, true, m end  # possibly fail
-  changed |= fchanged
-  merge!(S, J, eqclass) # apply the quotient
+# function fun_eqs!(S::Sketch, J::StructACSet, eqclass::EqClass,
+#                   d::Defined)::Tuple{Bool, Bool, NewStuff}
+#   changed = false
+#   J_cardinalities = Dict([v=>nparts(J,v) for v in S.schema[:vlabel]])
+#   update_crel!(J, m)
+#   [[push!(eqclass[v]) for _ in J_cardinalities[v]:(nparts(J, v)-1)]
+#     for v in S.schema[:vlabel]]
+#   fchanged, ffail = fun_eqs!(S, J, eqclass, d)
+#   if ffail return changed, true, m end  # possibly fail
+#   changed |= fchanged
+#   merge!(S, J, eqclass) # apply the quotient
 
-  # show(stdout, "text/plain", crel_to_cset(S, J)[1])
+#   # show(stdout, "text/plain", crel_to_cset(S, J)[1])
 
-  ns = NewStuff()
-  for (ti, tab) in enumerate(S.schema[:vlabel])
-    #println("tab $tab $((J_cardinalities[tab]+1):nparts(J, tab)))")
-    for (ns_ind, J_ind) in enumerate((J_cardinalities[tab]+1):nparts(J, tab))
-      #println("ns_ind $ns_ind J_ind $J_ind")
-      ns.ns[tab][ns_ind] = NewElem()
-      # get maps in
-      for e in S.schema[incident(S.schema, ti, :tgt), :elabel]
-        s, t = add_srctgt(e)
-        #println("CHECKING map in $e ($(J[incident(J, J_ind, t), s]))")
-        for val_in in J[incident(J, J_ind, t), s]
-          push!(ns.ns[tab][ns_ind].map_in[e], val_in)
-        end
-      end
-      # get maps out
-      for e in S.schema[incident(S.schema, ti, :src), :elabel]
-        s, t = add_srctgt(e)
-        #println("CHECKING map in $e ($(J[incident(J, J_ind, s), t]))")
-        for val_out in J[incident(J, J_ind, s), t]
-          if length(val_out) == 1
-            ns.ns[tab][ns_ind].map_out[e] = only(val_out)
-          elseif length(val_out) > 1
-            error("We just quotiented by functionality")
-          end
-        end
-      end
-    end
-  end
-  # Delete the purely new stuff
-  # [rem_parts!(J, tab, (c+1):nparts(J, tab)) for (tab, c) in
-  #  pairs(J_cardinalities)]
-  # for e in S.schema[:elabel]
-  #   cols = zip([J[z] for z in add_srctgt(e)]...)
-  #   del_parts = [i for (i, (x,y)) in enumerate(cols) if x == 0 || y == 0]
-  #   rem_parts!(J, e, del_parts)
-  # end
-  # new_J_cards = Dict([v=>nparts(J,v) for v in S.schema[:vlabel]])
-  # for v in S.schema[:vlabel]
-  #   new_J_cards[v] <= J_cardinalities[v] || error("Extra $v in $J")
-  # end
+#   # ns = NewStuff()
+#   # for (ti, tab) in enumerate(S.schema[:vlabel])
+#   #   #println("tab $tab $((J_cardinalities[tab]+1):nparts(J, tab)))")
+#   #   for (ns_ind, J_ind) in enumerate((J_cardinalities[tab]+1):nparts(J, tab))
+#   #     #println("ns_ind $ns_ind J_ind $J_ind")
+#   #     ns.ns[tab][ns_ind] = NewElem()
+#   #     # get maps in
+#   #     for e in S.schema[incident(S.schema, ti, :tgt), :elabel]
+#   #       s, t = add_srctgt(e)
+#   #       #println("CHECKING map in $e ($(J[incident(J, J_ind, t), s]))")
+#   #       for val_in in J[incident(J, J_ind, t), s]
+#   #         push!(ns.ns[tab][ns_ind].map_in[e], val_in)
+#   #       end
+#   #     end
+#   #     # get maps out
+#   #     for e in S.schema[incident(S.schema, ti, :src), :elabel]
+#   #       s, t = add_srctgt(e)
+#   #       #println("CHECKING map in $e ($(J[incident(J, J_ind, s), t]))")
+#   #       for val_out in J[incident(J, J_ind, s), t]
+#   #         if length(val_out) == 1
+#   #           ns.ns[tab][ns_ind].map_out[e] = only(val_out)
+#   #         elseif length(val_out) > 1
+#   #           error("We just quotiented by functionality")
+#   #         end
+#   #       end
+#   #     end
+#   #   end
+#   # end
+#   crel_to_cset(S, J)
+#   # Delete the purely new stuff
+#   # [rem_parts!(J, tab, (c+1):nparts(J, tab)) for (tab, c) in
+#   #  pairs(J_cardinalities)]
+#   # for e in S.schema[:elabel]
+#   #   cols = zip([J[z] for z in add_srctgt(e)]...)
+#   #   del_parts = [i for (i, (x,y)) in enumerate(cols) if x == 0 || y == 0]
+#   #   rem_parts!(J, e, del_parts)
+#   # end
+#   # new_J_cards = Dict([v=>nparts(J,v) for v in S.schema[:vlabel]])
+#   # for v in S.schema[:vlabel]
+#   #   new_J_cards[v] <= J_cardinalities[v] || error("Extra $v in $J")
+#   # end
 
-  return changed, false, ns
-end
+#   return changed, false, ns
+# end
 
 """
-Return whether it changes the eqclass or fails.
+Return whether it changes the eqclass or fails. Applies quotient
 """
 function fun_eqs!(S::Sketch, J::StructACSet, eqclass::EqClass, def::Defined
                  )::Pair{Bool,Bool}
@@ -399,8 +405,8 @@ function fun_eqs!(S::Sketch, J::StructACSet, eqclass::EqClass, def::Defined
       tgtvals = Set(J[vcat(incident(J, src_eqset, dsrc)...), dtgt])
       if length(tgtvals) > 1
         if tgtobj ∈ def[1]
-          println("Fun Eq of $d (src: $src_eqset) merges $tgtobj: $tgtvals")
-          show(stdout, "text/plain", J)
+          #println("Fun Eq of $d (src: $src_eqset) merges $tgtobj: $tgtvals")
+          #show(stdout, "text/plain", J)
           return changed => true
         else
           for (i,j) in Iterators.product(tgtvals, tgtvals)
@@ -413,6 +419,7 @@ function fun_eqs!(S::Sketch, J::StructACSet, eqclass::EqClass, def::Defined
       end
     end
   end
+  merge!(S, J, eqclass)
   return changed => false
 end
 """
@@ -445,7 +452,7 @@ function path_eqs2!(S::Sketch, J::StructACSet, eqclasses::EqClass,
       while !isempty(change)
         new_changed, change = prop_path_eq_info!(S, J, eqclasses, d, changed, eqd, poss, change)
         changed |= new_changed
-        if isnothing(change) return changed => nothing end # FAILED
+        if isnothing(change) return changed => true end # FAILED
       end
     end
   end
@@ -466,9 +473,10 @@ function prop_path_eq_info!(S, J, eq, d, changed, eqd, poss, change
                     for x in J[vcat(incident(J, poss[c], as)...), at]]
         if !(poss[t_ind] ⊆ tgt_vals)  # we've gained information
           intersect!(poss[t_ind], tgt_vals)
+          if isempty(poss[t_ind]) return changed, nothing end
           push!(newchange, t_ind)
           if length(poss[t_ind]) == 1 # we can set FKs into this table
-            changed |= set_fks!(J, eqd, poss, t_ind)
+            changed |= set_fks!(S, J, d, eqd, poss, t_ind)
           end
         end
       end
@@ -482,9 +490,10 @@ function prop_path_eq_info!(S, J, eq, d, changed, eqd, poss, change
                     for x in J[vcat(incident(J, poss[c], at)...), as]]
         if !(poss[s_ind] ⊆ src_vals) # gained information
           intersect!(poss[s_ind], src_vals)
+          if isempty(poss[s_ind]) return changed, nothing end
           push!(newchange, s_ind)
           if length(poss[s_ind]) == 1 # we can set FKs into this table
-            changed |= set_fks!(J, eqd, poss, s_ind)
+            changed |= set_fks!(S, J, d, eqd, poss, s_ind)
           end
         end
       end
@@ -494,14 +503,14 @@ function prop_path_eq_info!(S, J, eq, d, changed, eqd, poss, change
 end
 
 """Helper for prop_path_eq_info"""
-function set_fks!(J, eqd, poss, t_ind)::Bool
+function set_fks!(S, J, d, eqd, poss, t_ind)::Bool
   changed = false
   for e_ind in incident(eqd, t_ind, :src)
     e, tgt_ind = eqd[e_ind, :elabel], eqd[e_ind, :tgt]
     if length(poss[tgt_ind]) == 1
       x, y= only(poss[t_ind]), only(poss[tgt_ind])
       if !has_map(J, e, x, y)
-        add_rel!(J, e, x, y)
+        add_rel!(S, J, d, e, x, y)
         changed = true
       end
     end
@@ -511,7 +520,7 @@ function set_fks!(J, eqd, poss, t_ind)::Bool
     if length(poss[src_ind]) == 1
       x, y = only(poss[src_ind]), only(poss[t_ind])
       if !has_map(J, e, x, y)
-        add_rel!(J, e, x, y)
+        add_rel!(S, J, d, e, x, y)
         changed = true
       end
     end
@@ -668,7 +677,7 @@ end
 Branch priority - this is an art b/c patheqs & cones are two incommensurate ways
 that a piece of information could be useful. We'll prioritize cones:
 1. Defined->Defined AND in the diagram of (co)cones: weigh by # of (co)cones
-2. Cocone orphan
+2. Cocone orphan - order to minimize legs to undefined and then minimize legs
 3. Defined->Undefined AND in the diagram of (co)cones
 4. Defined -> Defined (no cone, weigh by # of path eqs)
 5: Defined->Undefined (no cone, weigh by # of path eqs)
@@ -677,7 +686,7 @@ that a piece of information could be useful. We'll prioritize cones:
 
 
 """
-function priority(S::Sketch, d::Defined, cco::Set{Symbol}
+function priority(S::Sketch, d::Defined, cco::Vector{Symbol}
                  )::Union{Nothing, Symbol}
   dobs, dhoms = d
   udobs = setdiff(S.schema[:vlabel], dobs)
@@ -689,7 +698,9 @@ function priority(S::Sketch, d::Defined, cco::Set{Symbol}
   if !isempty(hddl)
     return first(last(sort(hddl, by=x->x[2][1]))) # CASE 1
   elseif !isempty(cco)
-    return last(collect(cco)) # CASE 2
+    println("last(collect(cco)) $(last(collect(cco)))")
+    # don't we want to order the cocone obs by priority?
+    return first(sort(cco, by=cocone_score(S, d))) # CASE 2
   end
   hdu =hs(dobs,udobs)
   hudl = collect(filter(x -> x[2][1] > 0, hdd))
@@ -709,6 +720,16 @@ function priority(S::Sketch, d::Defined, cco::Set{Symbol}
     return first(last(sort(huu, by=x->x[2][2]))) # CASE 7
   end
   return nothing
+end
+
+"""minimize (legs w/ undefined tgts, undefined legs, total # of legs)"""
+function cocone_score(S::Sketch, d::Defined)::Function
+  function f(c::Symbol)::Tuple{Int,Int,Int}
+    cc = only([cc for cc in S.cocones if cc.apex == c])
+    srcs = filter(z->z ∉ d[1], [cc.d[x, :vlabel] for x in first.(cc.legs)])
+    (length(srcs),length(filter(l->l ∉d[2], cc.legs)),length(cc.legs))
+  end
+  return f
 end
 
 hom_score(S::Sketch, ls::Dict{Symbol, Int}, h::Symbol) = (

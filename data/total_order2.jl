@@ -112,13 +112,13 @@ function from_int(n::Int)::StructACSet
   add_parts!(I, :Antisym, n; a1=refl)
   return I
 end
-v1, v2, v3 = from_int.([1,2,3])
+v1, v2, v3, v4, v5 = from_int.([1,2,3,4,5])
 #
 db = init_db(reset=true)
 
 S= to_sketch;
-Jinit = create_premodel(S, [:I=>3])
-chase_set(db, S, StructACSet[Jinit], 3)
+Jinit = create_premodel(S, [:I=>5])
+chase_set(db, S, [Jinit=>init_defined(S, Jinit)], 5)
 
 
 ms = get_models(db, S, 3)

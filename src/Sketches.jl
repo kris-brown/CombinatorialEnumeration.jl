@@ -331,14 +331,14 @@ eqs:: Vector{Tuple{Symbol, Vector{Symbol}, Vector{Symbol}}}
 function eqs_to_diagram(schema::LabeledGraph, eqs
                         )::Vector{LabeledGraph}#,Dict{Vector{Vector{Symbol}}, Int}}}
   lgs = [LabeledGraph() for _ in 1:nv(schema)]
-  all_ps = [Dict{Vector{Symbol}, Int}() for _ in 1:nv(schema)]
+  all_ps = [Dict{Vector{Symbol}, Int}(Symbol[]=>1) for _ in 1:nv(schema)]
   for (i, root) in enumerate(schema[:vlabel])
     add_part!(lgs[i], :V; vlabel=root)
   end
   for (_, p1, p2) in eqs
     src_i = schema[only(incident(schema, first(p1), [:elabel])), :src]
     if haskey(all_ps[src_i], p2)
-      add_path!(schema, lgs[src_i], p1, all_ps[src_i], p2)
+      add_path!(schema, lgs[src_i], p1, all_ps[src_i], Vector{Symbol}(p2))
     else
       add_path!(schema, lgs[src_i], p1, all_ps[src_i])
       add_path!(schema, lgs[src_i], p2, all_ps[src_i], p1)
