@@ -209,27 +209,16 @@ end
 ####
 
 """Explore a premodel and add its results to the DB."""
-function chase_step_db(db::LibPQ.Connection, premodel_id::Int,
-                       redo::Bool=false)::Pair{Bool, Vector{Int}}
+function chase_step_db(db::T, S::Sketch, premodel_id::Int,
+                       redo::Bool=false)::Pair{Bool, Vector{Int}} where {T<:DBLike}
   verbose = 1
   # Check if already done
   if !redo
-    z = columntable(execute(db, """SELECT 1 FROM Premodel WHERE
-      Premodel_id=\$1 AND failed IS NULL""", [premodel_id]))
-    if isempty(z)
-      z = columntable(execute(db, """SELECT Model_id FROM Model
-                                     WHERE Premodel_id=\$1""", [premodel_id]))
-      if !isempty(z)
-        return true => [only(z[:premodel_id])]
-      else
-        z = columntable(execute(db, """SELECT Choice.child FROM Fired JOIN
-        Choice ON Fired.child=Choice.parent WHERE Fired.parent=\$1""", [premodel_id]))
-        return false => collect(z[:child])
-      end
-    end
+    redo_res = handle_redo(db, premodel_id)
+    if !isnothing(redo_res) return redo_res end
   end
 
-  S, J_, d_ = get_premodel(db, premodel_id)
+  J_, d_ = get_premodel(db, S, premodel_id)
   if verbose > 0 println("CHASING PREMODEL #$premodel_id: $(sizes(S, J_))") end
   # show(stdout, "text/plain", crel_to_cset(S, J_)[1])
   cs_res = chase_step(S, create_premodel(S, J_), d_)
@@ -237,6 +226,7 @@ function chase_step_db(db::LibPQ.Connection, premodel_id::Int,
   # Failure
   if isnothing(cs_res)
     if verbose > 0 println("\t#$premodel_id: Fail") end
+    set_fired(db, premodel_id)
     set_failed(db, premodel_id, true)
     return false => Int[]
   end
@@ -248,6 +238,7 @@ function chase_step_db(db::LibPQ.Connection, premodel_id::Int,
   # println("\tChased premodel: $(sizes(S, J))")
   # show(stdout, "text/plain", crel_to_cset(S, J)[1])
   chased_id = add_premodel(db, S, J, d; parent=premodel_id)
+  println("new chased id = $chased_id")
 
   # Check we have a real model
   if branch == b_success
@@ -267,6 +258,33 @@ function chase_step_db(db::LibPQ.Connection, premodel_id::Int,
 end
 
 """
+If there's nothing to redo, return nothing. Otherwise return whethre or not
+the premodel is a model and its value
+"""
+function handle_redo(db::Db, premodel_id::Int
+                      )::Union{Nothing,Pair{Bool,Vector{Int}}}
+  z = columntable(execute(db.conn, """SELECT 1 FROM Premodel WHERE
+  Premodel_id=\$1 AND failed IS NULL""", [premodel_id]))
+  if isempty(z)
+    z = columntable(execute(db.conn, """SELECT Model_id FROM Model
+                                  WHERE Premodel_id=\$1""", [premodel_id]))
+    if !isempty(z)
+      return true => [only(z[:premodel_id])]
+    else
+      z = columntable(execute(db.conn, """SELECT Choice.child FROM Fired JOIN
+      Choice ON Fired.child=Choice.parent WHERE Fired.parent=\$1""", [premodel_id]))
+      return false => collect(z[:child])
+    end
+  end
+end
+""""""
+function handle_redo(es::EnumState, premodel_id::Int
+                      )::Union{Nothing,Pair{Bool,Vector{Int}}}
+  if premodel_id <= length(es.pk) return nothing end
+  hsh = es.pk[premodel_id]
+  return (hsh ∈ es.models) => [premodel_id]
+end
+"""
 Find all models below a certain cardinality. Sometimes this exploration process
 generates models *larger* than what we start off with, yet these are eventually
 condensed to a small size.
@@ -277,7 +295,7 @@ If true, the final list of models may be incomplete, but it could be more
 efficient if the goal of calling this function is merely to make sure all models
 are in the database itself.
 """
-function chase_below(db::LibPQ.Connection, S::Sketch, n::Int; extra::Int=3,
+function chase_below(db::DBLike, S::Sketch, n::Int; extra::Int=3,
                      filt::Function=(x->true))::Nothing
   ms = []
   for combo in combos_below(length(free_obs(S)), n)
@@ -294,20 +312,21 @@ end
 Keep processing until none remain
 v is Vector{Pair{StructACSet,Defined}}
 """
-function chase_set(db::LibPQ.Connection,S::Sketch,
+function chase_set(db::DBLike,S::Sketch,
                    v::Vector, n::Int)::Nothing
   for (m,d) in v
     add_premodel(db, S, m, d)
   end
   while true
-    todo = get_premodel_ids(db, S; unchased=true, maxsize=n)
+    todo = get_premodel_ids(db; sketch=S, maxsize=n)
     if isempty(todo)
       break
     else
-      pmap(mdl -> chase_step_db(db, mdl), todo)
-      # for mdl in todo # Threads.@threads?
-      #   chase_step_db(db, mdl)
-      # end
+      #pmap(mdl -> chase_step_db(db, S, mdl), todo)
+
+      for mdl in todo # Threads.@threads?
+        chase_step_db(db, S, mdl)
+      end
     end
   end
 end

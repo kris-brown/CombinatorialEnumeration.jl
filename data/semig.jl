@@ -154,7 +154,7 @@ I2,I3 = [from_matrix.(xs) for xs in [s2,s3]];
 # nh2,nh3,nh3_ = length.([h2, h3,h3_])
 
 #Jinit = create_premodel(S, [:s=>1]);
-db = init_db(reset=true);
+# db = init_db(reset=true);
 #chase_set(db, S, Pair{StructACSet, Defined}[Jinit=>init_defined(S, Jinit)], 2)
 #ms = get_models(db, S, 1)
 
@@ -168,13 +168,13 @@ db = init_db(reset=true);
 # J_old = deepcopy(J)
 # d = Set([:s, :s2]) => setdiff(Set(S.schema[:elabel]), fs)
 # path_eqs2!(S, J, eq, d)
-
+es = EnumState()
 Jinit = create_premodel(S, [:s=>2]);
-chase_set(db, S, Pair{StructACSet, Defined}[Jinit=>init_defined(S, Jinit)], 2)
+chase_set(es, S, Pair{StructACSet, Defined}[Jinit=>init_defined(S, Jinit)], 2)
 Jinit = create_premodel(S, [:s=>3]);
-chase_set(db, S, Pair{StructACSet, Defined}[Jinit=>init_defined(S, Jinit)], 3)
+chase_set(es, S, Pair{StructACSet, Defined}[Jinit=>init_defined(S, Jinit)], 3)
 
-ms = get_models(db, S, 3);
+ms = get_models(es, S, 3);
 
 
 # WHY is s3 #15  not associative? kid_ = 2 not 3
