@@ -12,6 +12,18 @@ using Catlab.CategoricalAlgebra, Catlab.Present
 using CSetAutomorphisms
 using LibPQ, Tables, DataStructures
 
+function nauty(x)
+  for i in 1:5
+    try
+      h = call_nauty(x)
+      return h
+    catch _
+      print("f $i ")
+    end
+  end
+  error(generate_json_acset(x))
+end
+
 abstract type DBLike end
 struct Db <: DBLike
   conn::LibPQ.Connection
@@ -40,7 +52,7 @@ Base.getindex(es::EnumState, i::Int) = es.premodels[es.pk[i]]
 function add_premodel(es::EnumState, S::Sketch, J::StructACSet, d::Defined;
                       parent::Union{Int, Nothing}=nothing,
                       chash::Union{UInt64, Nothing}=nothing)::Int
-  chash = isnothing(chash) ? canonical_hash(J; pres=S.crel_pres) : chash
+  chash = isnothing(chash) ? hash(nauty(J)) : chash
   if !isnothing(parent)
     es.fired[parent] = length(es.pk)
   end
@@ -57,7 +69,7 @@ end
 
 function get_premodel_id(es::EnumState, crel::StructACSet,
   crel_pres::Presentation)::Union{Nothing, Int}
-  hsh = canonical_hash(crel; pres=crel_pres)
+  hsh = hash(nauty(crel))
   return findfirst(==(hsh), es.pk)
 end
 
@@ -222,7 +234,7 @@ function add_premodel(db::Db, F::Sketch, m::StructACSet, d::Defined;
                       parent::Union{Int, Nothing}=nothing,
                       chash::Union{UInt64, Nothing}=nothing)::Int
   # println("\t adding premodel $m")
-  chash = isnothing(chash) ? canonical_hash(m; pres=F.crel_pres) : chash
+  chash = isnothing(chash) ? hash(nauty(m)) : chash
   # check if already in db
   r_ = columntable(execute(db.conn,
     "SELECT Premodel_id FROM Premodel WHERE hash=\$1",[chash]))[:premodel_id]
@@ -254,7 +266,7 @@ function add_model(db::Db, F::Sketch, relm::StructACSet,
   pid = add_premodel(db, F, relm, d; parent=parent, chash=relm_hsh)
 
   # check if already in db
-  chash = canonical_hash(m; pres=F.cset_pres)
+  chash = hash(nauty(m))
   r = columntable(execute(db.conn, "SELECT Model_id FROM Model WHERE hash=\$1",
                               [chash]))[:model_id]
   if !(isempty(r))
@@ -271,7 +283,7 @@ end
 function get_premodel_id(db::Db, crel::StructACSet,
                          crel_pres::Presentation)::Union{Nothing, Int}
   z = columntable(execute(db.conn, """SELECT Premodel_id FROM Premodel
-      WHERE hash=\$1""",[canonical_hash(crel, crel_pres)]))[:premodel_id]
+      WHERE hash=\$1""",[hash(nauty(crel))]))[:premodel_id]
   return (isempty(z) ? nothing : z[1])
 end
 

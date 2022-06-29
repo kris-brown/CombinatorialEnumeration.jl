@@ -210,7 +210,7 @@ dict_to_cone(d::Dict)::Cone = Cone(
   Pair{Int,Symbol}[parse(Int, k)=>Symbol(v) for (k, v) in map(only, d["legs"])])
 
 """TO DO: add cone and eq info to the hash...prob requires CSet for Sketch"""
-Base.hash(S::Sketch) = canonical_hash(to_graph(S.schema); pres=TheoryGraph)
+Base.hash(S::Sketch) = call_nauty(to_graph(S.schema))
 to_json(S::Sketch) = JSON.json(Dict([
   :name=>S.name, :schema=>generate_json_acset(S.schema),
   :cones => [cone_to_dict(c) for c in S.cones],

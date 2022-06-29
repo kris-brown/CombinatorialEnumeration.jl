@@ -258,8 +258,8 @@ function chase_step_db(db::T, S::Sketch, premodel_id::Int,
 end
 
 """
-If there's nothing to redo, return nothing. Otherwise return whethre or not
-the premodel is a model and its value
+If there's nothing to redo, return nothing. Otherwise return whether or not
+the premodel is a model + its value
 """
 function handle_redo(db::Db, premodel_id::Int
                       )::Union{Nothing,Pair{Bool,Vector{Int}}}
@@ -277,7 +277,9 @@ function handle_redo(db::Db, premodel_id::Int
     end
   end
 end
-""""""
+
+"""
+"""
 function handle_redo(es::EnumState, premodel_id::Int
                       )::Union{Nothing,Pair{Bool,Vector{Int}}}
   if premodel_id <= length(es.pk) return nothing end

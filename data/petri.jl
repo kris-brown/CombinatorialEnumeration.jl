@@ -1,4 +1,5 @@
 using Catlab.Present, Catlab.CategoricalAlgebra, Catlab.Theories
+using ModelEnumeration
 
 @present ThPetri(FreeSchema) begin
   (S,T,I,O)::Ob
@@ -30,3 +31,18 @@ function all_petri(i::Int)::Vector{Petri}
   end
   return res
 end
+
+petschema = @acset LabeledGraph begin
+  V = 4
+  E = 4
+  vlabel = [:S,:T,:I,:O]
+  elabel = [:is,:it,:os,:ot]
+  src    = [3,  3, 4, 4]
+  tgt    = [1, 2,  1,  2]
+end
+
+
+psketch = Sketch(:FG, petschema, Cone[], Cone[], [])
+
+es = EnumState()
+

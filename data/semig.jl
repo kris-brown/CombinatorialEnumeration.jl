@@ -139,42 +139,27 @@ function test_assoc(m::Matrix{Int})::Union{Nothing, Tuple{Int,Int,Int}}
   return nothing
 end
 
+function to_matrix(X::StructACSet)::Matrix{Int}
+  m = zeros(Int, (nparts(X,:s),nparts(X,:s)))
+  for (k, p1, p2) in zip(X[:k],X[:π₁],X[:π₂])
+    m[p1,p2] = k
+  end
+  m
+end
+
 #
 S = semig;
 using CSetAutomorphisms
 
-
+"""Naive filter strategy to get semigroups"""
 get_semis(i::Int) = [m for m in from_matrix.(binfuns(i)) if sat_eqs(S, create_premodel(S,m))]
-s2,s3 = binfuns.([2,3]);
-# s3_ = binfuns_rec(s2);
-# s4_ = binfuns_rec(s3);
-I2,I3 = [from_matrix.(xs) for xs in [s2,s3]];
-# h2,h3,h3_ = [Set([canonical_hash(x;pres=S.cset_pres) for x in xs]) for xs in [I2,I3,I3_]];
-# ns2,ns3,ns3_ = length.([s2,s3,s3_])
-# nh2,nh3,nh3_ = length.([h2, h3,h3_])
 
-#Jinit = create_premodel(S, [:s=>1]);
-# db = init_db(reset=true);
-#chase_set(db, S, Pair{StructACSet, Defined}[Jinit=>init_defined(S, Jinit)], 2)
-#ms = get_models(db, S, 1)
-
-# I2_ = deepcopy(I2[1])
-# fs = [p1p2, p2p3, idk, kid]
-# for f in fs
-#   set_subpart!(I2_, f, zeros(Int, 8))
-# end
-# J = create_premodel(S, I2_)
-# eq = init_eq(S, J)
-# J_old = deepcopy(J)
-# d = Set([:s, :s2]) => setdiff(Set(S.schema[:elabel]), fs)
-# path_eqs2!(S, J, eq, d)
 es = EnumState()
 Jinit = create_premodel(S, [:s=>2]);
 chase_set(es, S, Pair{StructACSet, Defined}[Jinit=>init_defined(S, Jinit)], 2)
 Jinit = create_premodel(S, [:s=>3]);
 chase_set(es, S, Pair{StructACSet, Defined}[Jinit=>init_defined(S, Jinit)], 3)
+Jinit = create_premodel(S, [:s=>4]);
+chase_set(es, S, Pair{StructACSet, Defined}[Jinit=>init_defined(S, Jinit)], 4)
 
-ms = get_models(es, S, 3);
-
-
-# WHY is s3 #15  not associative? kid_ = 2 not 3
+#ms = get_models(es, S, maxsize=3);

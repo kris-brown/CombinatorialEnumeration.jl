@@ -332,6 +332,7 @@ function has_map(S::Sketch, J::StructACSet, f::Symbol, x::Int, y::Int,
   st = (s_eq(x), t_eq(y))
   return st ∈ collect(zip(s_eq.(J[from_map]), t_eq.(J[to_map])))
 end
+
 # Defined
 #########
 function init_defined(S::Sketch, J::StructACSet)::Defined
@@ -339,6 +340,7 @@ function init_defined(S::Sketch, J::StructACSet)::Defined
   update_defined!(S, J, d)
   return d
 end
+
 """
 Return a new Defined object with updates:
 - A hom that has a value for all elements of its domain
