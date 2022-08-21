@@ -1,4 +1,4 @@
-using Revise
+# using Revise
 using Catlab.CategoricalAlgebra
 using ModelEnumeration
 
@@ -22,14 +22,14 @@ fgschema = @acset LabeledGraph begin
   tgt    = [2,  1,  2]
 end
 
-
 fg = Sketch(:FG, fgschema, Cone[], Cone[], [
   (:fginv,      [:f, :g],    []),
   (:involution, [:inv,:inv], [])])
 
-es = EnumState()
-I = create_premodel(fg, [:A=>2,:B=>2])
-db=  init_db()
 
-chase_set(db, fg, [I=>init_defined(fg, I)], 4)
-chase_set(es, fg, [I=>init_defined(fg, I)], 4)
+function get_models(db::Bool=false)
+  es = db ? init_db() : EnumState()
+  I = create_premodel(fg, [:A=>2,:B=>2])
+  chase_set(es, fg, [I=>init_defined(fg, I)], 4)
+  return es
+end

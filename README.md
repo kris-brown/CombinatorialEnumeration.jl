@@ -1,4 +1,8 @@
-# ModelEnumeration.jl
+# ![# ![Catlab.jl](docs/src/assets/logo.png) ModelEnumeration.jl
+.jl](docs/src/assets/logo.png) ModelEnumeration.jl
+[![Documentation](https://github.com/kris-brown/ModelEnumeration.jl/workflows/Documentation/badge.svg)](https://kris-brown.github.io/ModelEnumeration.jl/dev/)
+![Tests](https://github.com/kris-brown/ModelEnumeration.jl/workflows/Tests/badge.svg)
+
 
 ## Motivation
 Suppose you are given a formally specified theory, for example the theory of (small) [categories](https://www.math3ma.com/blog/what-is-a-category), which say a *category* `C` is specified by:
@@ -18,8 +22,18 @@ Even if each individual piece of data or constraint in this definition is straig
 There is pedagogical value in working through these types of problems in one's head, but there is also value in having these answers automatically ready at hand when trying to think about / build intuition for more complicated concepts. There is something mechanical about this process, and the purpose of this repo is to mechanize precisely that in an efficient way that's also usable for people trying to build their intuitions.
 
 ## Usage
-
 TBD
+
+## Notes
+From "Toposes, Triples and Theories" (Barr and Wells)
+
+- Theorem 4.3: Every FP-theory has an extension to an LE-theory which has the
+same models in any LE-category.
+- Theorem 4.4 : The
+category of set-valued models of a left exact theory has arbitrary limits and
+all filtered colimits; moreover, these are preserved by the set-valued functors
+of evaluation at the objects of the theory.
+- Theorem 4.1: (outlines which kinds of sketches have which kinds of (co)limits)
 
 ## Wishlist
 - [x] Generate models of a theory by a variant of [the chase](https://en.wikipedia.org/wiki/Chase_(algorithm)) that deliberately produces models that are not initial.

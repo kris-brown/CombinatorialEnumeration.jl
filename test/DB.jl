@@ -1,12 +1,23 @@
-include(joinpath(@__DIR__, "../src/DB.jl"))
-include(joinpath(@__DIR__, "Sketch.jl"))
+module TestDB
 
-db = init_db(reset=true)
-@test add_sketch(db, fg) == 1
-@test get_sketch(db, 1) == fg
+# using Revise
+using Test
+using ModelEnumeration
+using Catlab.CategoricalAlgebra
 
-@test add_sketch(db, fg) == 1 # does not insert again
+include(joinpath(@__DIR__, "TestSketch.jl"));
+
+J = create_premodel(S);
+es = EnumState()
+
+@test add_premodel(es, S, J) == 1
+@test get_premodel(es, S, 1) == J
+@test add_premodel(es, S, J) == 1 # does not insert again
 
 
-@test add_premodel(db, fg, xrel) == 1
-@test get_premodel(db, 1) == (fg => xrel)
+# To do: reimplement postgres backend & test db.
+# @test add_sketch(db, S) == 1
+# @test get_sketch(db, 1) == S
+# @test add_sketch(db, S) == 1 # does not insert again
+
+end # module

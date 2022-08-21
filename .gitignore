@@ -23,10 +23,5 @@ docs/site/
 # environment.
 Manifest.toml
 
-sketch.db
-
-test.db
-
 .DS_Store
-
-fls.db
+lcov.info
