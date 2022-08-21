@@ -1,4 +1,4 @@
-using Revise
+# using Revise
 using ModelEnumeration
 using Catlab.CategoricalAlgebra
 """

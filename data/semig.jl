@@ -1,26 +1,27 @@
-using Revise
+# using Revise
 using Catlab.CategoricalAlgebra
 using ModelEnumeration
 """
 Semigroups. An associative binary operation.
 https://research-repository.st-andrews.ac.uk/handle/10023/945 Table 4.1
-https://oeis.org/A027851: should be 1 5 24 188
+https://oeis.org/A027851: should be 1 5 24 188 1915
 
-n           | 1 | 2  | 3     | 4
-# semi      | 1 | 8  | 113   | ?
-# semi (iso)| 1 | 5  | 24    | 184 (not 188?!)
-# cset      | 1 | 16 | 19683 | 4294967296
+n           | 1 | 2  | 3     | 4                 |  5
+# semi      | 1 | 8  | 113   | ?                 |  183 732 | 17 061 118
+# semi (iso)| 1 | 5  | 24    | 184               |  1915    |
+# cset      | 1 | 16 | 19683 | 4294967296        |
 
 # looked @ | 1 |  ?  | 399
 """
 
-p1p2, p2p3, idk, kid = map(Symbol, ["π₁×π₂","π₂×π₃","id×k","k×id"])
+|p1p2, p2p3, idk, kid = map(Symbol, ["π₁×π₂","π₂×π₃","id×k","k×id"])
 semig_schema = @acset LabeledGraph begin
   V = 3; E = 10; vlabel = [:s, :s2, :s3]
   elabel = [:k, :π₁, :π₂, :Π₁, :Π₂, :Π₃, p1p2, p2p3, idk, kid]
   src  = [2,  2,   2,   3,  3,   3,   3,   3,  3,   3]
   tgt  = [1,  1,   1,   1,  1,   1,   2,   2,  2,   2]
 end
+n_cset(i) = prod([(i^2 * i), (i^3*i^2)^4])
 
 # s2 is pair
 paircone = Cone(@acset(LabeledGraph, begin V = 2; vlabel = [:s, :s] end),

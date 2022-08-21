@@ -1,12 +1,11 @@
 module Limits
-export Weights, LoneCones, compute_cones!, compute_cocones!, query_cone
+export LoneCones, compute_cones!, compute_cocones!, query_cone
 
 using ..Sketches
 using ..Models
 
 using Catlab.CategoricalAlgebra
 using DataStructures
-const Weights = DefaultDict{Pair{Symbol, Int}, Float64}
 const LoneCones = Dict{Symbol,Set{Int}}
 
 """
@@ -101,7 +100,6 @@ end
 
 """
 Look for instances of a cone's diagram in a premodel
-Modifies w
 """
 function query_cone(S::Sketch, J::StructACSet, c::Cone, eq::EqClass,
                    )::Vector{Vector{Int}}
@@ -224,6 +222,11 @@ Add cocone apex objects based on the cocone diagram. Modifies `eq`
 
 For example: a cocone object D over a span B <- A -> C (i.e. a pushout)
 
+We currently assume all functions within the diagram are defined, and then
+reason about what the data of the legs of the cocone should be and whether or
+not elements in the apex should be merged. Future work might involve reasoning
+even when the functions in the diagram are only partially defined.
+
 We start assuming there is a cocone element for |A|+|B|+|C| and then quotient
 by each arrow in the diagram. Assume each set has two elements, so we initially
 suppose D = |6|. Let A->B map both elements to b₁, while A↪C.
@@ -300,27 +303,34 @@ Updates `m` and `eq` and `d`
 function compute_cocone!(S::Sketch, J::StructACSet, co_cone::Cone,
                          eqc::EqClass, d::Defined)::Tuple{Bool,Bool, Set{Int}}
   co_cone.apex ∉ d[1] || error("Don't compute cocone that's defined $J $d")
-  verbose, changed = false, false
-  diag_objs = co_cone.d[:vlabel]
-  diag_homs = ne(co_cone.d)== 0 ? Tuple{Symbol,Int,Int}[] :
-    collect(zip([co_cone.d[x] for x in [:elabel, :src,:tgt]]...))
 
-  # Get unquotiented apex: all distinct elements for each table involved
+  println("computing cocone $(co_cone.apex) for ")
+  show(stdout, "text/plain", crel_to_cset(S,J)[1])
+
+  verbose, changed = true, false
+
+  # Get all objects and morphisms (+ their src/tgt) in the diagram
+  diag_objs = co_cone.d[:vlabel]
+  if ne(co_cone.d) < nv(co_cone.d)
+    diag_homs = Tuple{Symbol,Int,Int}[]
+  else
+    diag_homs = collect(zip([co_cone.d[non_id(co_cone.d), x]
+                                       for x in [:elabel, :src,:tgt]]...))
+  end
+
+  # Get *unquotiented* apex: i.e. all distinct elements for each table involved
   apex_obs = vcat([[(i, v) for v in eq_reps(eqc[obj])]
                    for (i, obj) in enumerate(diag_objs)]...)
+
   # Get the apex objs index from the (tab_ind, elem_ind) value itself
   apex_ob_dict = Dict([(j,i) for (i,j) in enumerate(apex_obs)])
+
   # Equivalence class of `apex_obs`
   eq_elems = IntDisjointSets(length(apex_obs))
 
-  # Check if all homs are total before moving on
-  for e in Set(vcat(co_cone.d[:elabel])) # , last.(co_cone.legs)))
-    sreps = [find_root!(eqc[src(S,e)],x) for x in J[add_srctgt(e)[1]]]
-    missin = setdiff(eq_reps(eqc[src(S,e)]), sreps)
-    if !isempty(missin)
-      # println("cannot compute cocone bc $e does not map $missin anywhere")
-      return changed, false, Set{Int}()
-    end
+  # Check if all homs in the diagram are total before moving on
+  if any(e->!is_total(S,J,e,eqc), elabel(co_cone))
+    return changed, false, Set{Int}()
   end
 
   # Use C-set map data to quotient this
@@ -337,7 +347,7 @@ function compute_cocone!(S::Sketch, J::StructACSet, co_cone::Cone,
 
   # Reorganize equivalence class data into a set of sets.
   eqsets = eq_sets(eq_elems; remove_singles=false)
-
+  println("eqsets $eqsets ")
   # Determine what apex element(s) each eq class corresponds to, if any
   apex_tgt_dict = Dict()
   for eqset in eqsets
@@ -357,17 +367,18 @@ function compute_cocone!(S::Sketch, J::StructACSet, co_cone::Cone,
 
     if verbose println("eqset_vals $eqset_vals") end
 
-    # Now that we know this eqset maps to apex elements, we set their leg maps
-    # to this apex value.
+    # Now that we know this eqset either maps to an apex element or it is in the
+    # table of a leg (so we should create a new apex element)
     leg_vals = Tuple{Symbol,Int,Int}[]
     for (leg_ind, leg_name) in co_cone.legs
       ind_vals = collect(last.(filter(v->v[1]==leg_ind, eqset_vals)))
+      println("ind vals $ind_vals")
       if length(ind_vals) == 1
         ind_val = only(ind_vals)
         l_src, l_tgt = add_srctgt(leg_name)
         a_tgt = J[incident(J, ind_val, l_src), l_tgt]
         if !isempty(a_tgt)
-          # println("$(incident(J, ind_val, l_src)) a tgt $a_tgt")
+          println("$(incident(J, ind_val, l_src)) a tgt $a_tgt")
           ap = find_root!(eqc[co_cone.apex], first(a_tgt))
           push!(leg_vals, (leg_name, ind_val, ap))
         end
@@ -434,4 +445,5 @@ function compute_cocone!(S::Sketch, J::StructACSet, co_cone::Cone,
   return changed, false, Set(
     collect(setdiff(parts(J, co_cone.apex), seen_apex_tgts)))
 end
+
 end # module
