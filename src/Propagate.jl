@@ -51,11 +51,34 @@ function propagate!(S::Sketch, J::SketchModel{Sc}, c::Change{Sc}) where Sc
   update_cocones!(S,J,m,c)
 
   # update (co)cones patheqs and quotient by functionality
-  m=>vcat(quotient_functions!(S,J,m,c), propagate_cones!(S,J,m,c),
-       propagate_cocones!(S,J,m,c),propagate_patheqs!(S,J,m,c))
+  m=>vcat(set_terminal(S,J),
+    quotient_functions!(S,J,m,c), propagate_cones!(S,J,m,c),
+    propagate_cocones!(S,J,m,c), propagate_patheqs!(S,J,m,c))
 end
 
+"""
+All maps into frozen objects of cardinality 1 are determined
+"""
+function set_terminal(S::Sketch,J::SketchModel)
+  verbose = false
+  res = Addition[]
+  for v in J.frozen[1]
+    if nparts(J.model, v) == 1 # all maps into this obj must be 1
+      for e in hom_in(S,v)
+        e_s, e_t = add_srctgt(e)
+        for u in setdiff(parts(J.model, src(S,e)), J.model[e_s])
+          if verbose println("SET TERMINAL ADDING $e:#$u->1") end
+          push!(res, add_fk(S,J,e,u,1))
+        end
+      end
+    end
+  end
+  return res
+end
 
+"""
+Modify union find structures given a model update
+"""
 function update_eqs!(J::SketchModel,m::ACSetTransformation)
   J.eqs = Dict(map(collect(J.eqs)) do (v, eq)
     new_eq = IntDisjointSets(nparts(J.model, v))

@@ -220,7 +220,7 @@ representing premodels, which may not satisfy equations/(co)limit constraints)
 
     if isempty(eqs)
       eqds = Dict(map(vlabel(schema)) do v
-        d = LabeledGraph(); add_vertex!(d; vlabel=v)
+        d = LabeledGraph(); add_part!(d,:V; vlabel=v)
         v => d
       end)
     else
@@ -232,6 +232,7 @@ representing premodels, which may not satisfy equations/(co)limit constraints)
         eqds = Dict(zip(vlabel(schema),eqs))
       end
     end
+    all(gr->all(==(0),refl(gr)), values(eqds)) || error("refl in eq graph")
     [check_cone(schema, c) for c in cones]
     [check_cocone(schema, c) for c in cocones]
     cset_type = grph_to_cset(name, schema)
@@ -307,64 +308,7 @@ function grph_to_crel(name::Symbol,sketch::LabeledGraph;
   eval(expr)
   return eval(name′)
 end
-"""
-For each cone, we have a cone object which keeps track of, for each element in
-the apex object, which tuple of elements in the diagram objects are matched. We
-only need one table for each distinct *type* of object in the diagram, not one
-for each vertex in the diagram.
-"""
-function cone_to_cset(n::Symbol, schema::LabeledGraph, c::Cone, i::Int)
-  check_cone(schema,c)
-  return c
-  # name = Symbol("$(n)_cone_$i")
-  # pres = Presentation(FreeSchema)
-  # obs = Dict([v=>add_generator!(pres, Ob(FreeSchema, Symbol("$v")))
-  #             for v in Set(c.d[:vlabel])])
-  # ap = add_generator!(pres, Ob(FreeSchema, :apex))
 
-  # for (j,k) in enumerate(c.d[:vlabel])
-  #   add_generator!(pres, Hom(cone_leg(i, j), ap, obs[k]))
-  # end
-  # expr = struct_acset(name, StructACSet, pres, index=pres.generators[:Hom])
-  # eval(expr)
-  # return eval(name)
-end
-
-# function cocone_to_cset(n::Symbol, schema::LabeledGraph, c::Cone, i::Int)
-    # name = Symbol("$(n)_cocone_$i")
-  # pres = Presentation(FreeSchema)
-
-  # obs = Dict([v=>add_generator!(pres, Ob(FreeSchema, Symbol("$v")))
-  #             for v in Set(c.d[:vlabel])])
-  # ap = add_generator!(pres, Ob(FreeSchema, :apex))
-
-  # for (j,k) in enumerate(c.d[:vlabel])
-  #   cc, ccs, cct = cocone_leg(i, j, true)
-  #   grel = add_generator!(pres, Ob(FreeSchema, cc))
-  #   add_generator!(pres, Hom(ccs, grel, ap))
-  #   add_generator!(pres, Hom(cct, grel, obs[k]))
-  # end
-  # expr = struct_acset(name, StructACSet, pres, index=pres.generators[:Hom])
-  # eval(expr)
-  # return eval(name)
-# end
-
-# function eq_to_type(n::Symbol, p::LabeledGraph, x::Symbol)
-#   name = add_path(n,x)
-#   pres = Presentation(FreeSchema)
-#   obs = [add_generator!(pres, Ob(FreeSchema, add_path(i)))
-#          for (i, v) in enumerate(p[:vlabel])]
-
-#   for (i,k) in collect(enumerate(p[:vlabel]))
-#     pob, psrc, ptgt = add_pathrel(i)
-#     gob = add_generator!(pres, Ob(FreeSchema, pob))
-#     add_generator!(pres, Hom(psrc, gob, obs[1]))
-#     add_generator!(pres, Hom(ptgt, gob, obs[i]))
-#   end
-#   expr = struct_acset(name, StructACSet, pres, index=pres.generators[:Hom])
-#   eval(expr)
-#   return eval(name)
-# end
 
 """Validate path eq"""
 function check_eq(schema::LabeledGraph, p::Vector,q::Vector)::Nothing
@@ -571,5 +515,62 @@ end
 
 cone_query(c::Cone) = cone_query(c.d, c.legs)
 
+
+
+# function cocone_to_cset(n::Symbol, schema::LabeledGraph, c::Cone, i::Int)
+    # name = Symbol("$(n)_cocone_$i")
+  # pres = Presentation(FreeSchema)
+
+  # obs = Dict([v=>add_generator!(pres, Ob(FreeSchema, Symbol("$v")))
+  #             for v in Set(c.d[:vlabel])])
+  # ap = add_generator!(pres, Ob(FreeSchema, :apex))
+
+  # for (j,k) in enumerate(c.d[:vlabel])
+  #   cc, ccs, cct = cocone_leg(i, j, true)
+  #   grel = add_generator!(pres, Ob(FreeSchema, cc))
+  #   add_generator!(pres, Hom(ccs, grel, ap))
+  #   add_generator!(pres, Hom(cct, grel, obs[k]))
+  # end
+  # expr = struct_acset(name, StructACSet, pres, index=pres.generators[:Hom])
+  # eval(expr)
+  # return eval(name)
+# end
+
+# function eq_to_type(n::Symbol, p::LabeledGraph, x::Symbol)
+#   name = add_path(n,x)
+#   pres = Presentation(FreeSchema)
+#   obs = [add_generator!(pres, Ob(FreeSchema, add_path(i)))
+#          for (i, v) in enumerate(p[:vlabel])]
+
+#   for (i,k) in collect(enumerate(p[:vlabel]))
+#     pob, psrc, ptgt = add_pathrel(i)
+#     gob = add_generator!(pres, Ob(FreeSchema, pob))
+#     add_generator!(pres, Hom(psrc, gob, obs[1]))
+#     add_generator!(pres, Hom(ptgt, gob, obs[i]))
+#   end
+#   expr = struct_acset(name, StructACSet, pres, index=pres.generators[:Hom])
+#   eval(expr)
+#   return eval(name)
+# end
+"""
+For each cone, we have a cone object which keeps track of, for each element in
+the apex object, which tuple of elements in the diagram objects are matched. We
+only need one table for each distinct *type* of object in the diagram, not one
+for each vertex in the diagram.
+"""
+# function cone_to_cset(n::Symbol, schema::LabeledGraph, c::Cone, i::Int)
+  # name = Symbol("$(n)_cone_$i")
+  # pres = Presentation(FreeSchema)
+  # obs = Dict([v=>add_generator!(pres, Ob(FreeSchema, Symbol("$v")))
+  #             for v in Set(c.d[:vlabel])])
+  # ap = add_generator!(pres, Ob(FreeSchema, :apex))
+
+  # for (j,k) in enumerate(c.d[:vlabel])
+  #   add_generator!(pres, Hom(cone_leg(i, j), ap, obs[k]))
+  # end
+  # expr = struct_acset(name, StructACSet, pres, index=pres.generators[:Hom])
+  # eval(expr)
+  # return eval(name)
+# end
 
 end # module

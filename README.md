@@ -1,11 +1,10 @@
-# ![# ![Catlab.jl](docs/src/assets/logo.png) ModelEnumeration.jl
-.jl](docs/src/assets/logo.png) ModelEnumeration.jl
+# ![Catlab.jl](docs/src/assets/logo.png) ModelEnumeration.jl
 [![Documentation](https://github.com/kris-brown/ModelEnumeration.jl/workflows/Documentation/badge.svg)](https://kris-brown.github.io/ModelEnumeration.jl/dev/)
 ![Tests](https://github.com/kris-brown/ModelEnumeration.jl/workflows/Tests/badge.svg)
 
 
 ## Motivation
-Suppose you are given a formally specified theory, for example the theory of (small) [categories](https://www.math3ma.com/blog/what-is-a-category), which say a *category* `C` is specified by:
+Suppose you are given a formally specified theory, for example the theory of (small) [categories](https://www.math3ma.com/blog/what-is-a-category), which says that a *category* `C` is specified by:
 - A set of *objects*, `Ob(C)`
 - For each pair of objects `a,b ∈ Ob(C)`, a set of arrows `Hom(a,b)`.
 - A composition operator that gives an arrow in `f⋅g ∈ Hom(a,c)` for each pair of arrows `f ∈ Hom(a,b)` and `g ∈ Hom(b,c)`.
@@ -21,8 +20,6 @@ Even if each individual piece of data or constraint in this definition is straig
 
 There is pedagogical value in working through these types of problems in one's head, but there is also value in having these answers automatically ready at hand when trying to think about / build intuition for more complicated concepts. There is something mechanical about this process, and the purpose of this repo is to mechanize precisely that in an efficient way that's also usable for people trying to build their intuitions.
 
-## Usage
-TBD
 
 ## Notes
 From "Toposes, Triples and Theories" (Barr and Wells)
@@ -37,7 +34,6 @@ of evaluation at the objects of the theory.
 
 ## Wishlist
 - [x] Generate models of a theory by a variant of [the chase](https://en.wikipedia.org/wiki/Chase_(algorithm)) that deliberately produces models that are not initial.
-- [x] Store model progress in a Postgres database
 - [ ] Test properties of the various theories in the `data/sketches/` directory
 - [ ] Automatically convert the `EqTheories` (intuitively declarable through wiring diagrams from the `@program` macro, see `src/old/ATP/WD.jl`) into the finite limit theories of `src/Sketch.jl`.
 - [ ] Use `@threads` to parallelize many parallelizable aspects of the code.

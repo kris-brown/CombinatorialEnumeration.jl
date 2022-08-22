@@ -1,36 +1,15 @@
+module Petri
+
+# using Revise
+using Test
 using Catlab.Present, Catlab.CategoricalAlgebra, Catlab.Theories
 using ModelEnumeration
+using CSetAutomorphisms
 
-@present ThPetri(FreeSchema) begin
-  (S,T,I,O)::Ob
-  si::Hom(S,I)
-  os::Hom(O,S)
-  it::Hom(I,T)
-  to::Hom(T,O)
-end
-@acset_type Petri(ThPetri)
 
-"""Create all petri nets with i S/T and i+1 I/O"""
-function all_petri(i::Int)::Vector{Petri}
-  res = Petri[]
-  I = Petri()
-  add_parts!(I, :S, i);add_parts!(I, :T, i)
-  add_parts!(I, :I, i);add_parts!(I, :O, i);
-  for os in Iterators.product([1:i for _ in 1:i]...)
-    set_subpart!(I, :os, collect(os))
-    for it in Iterators.product([1:i for _ in 1:i]...)
-      set_subpart!(I, :it, collect(it))
-      for si in Iterators.product([1:i for _ in 1:i]...)
-        set_subpart!(I, :si, collect(si))
-        for to in Iterators.product([1:i for _ in 1:i]...)
-          set_subpart!(I, :to, collect(to))
-          push!(res, deepcopy(I))
-        end
-      end
-    end
-  end
-  return res
-end
+##########
+# Sketch #
+##########
 
 petschema = @acset LabeledGraph begin
   V = 4
@@ -41,8 +20,42 @@ petschema = @acset LabeledGraph begin
   tgt    = [1, 2,  1,  2]
 end
 
+S = Sketch(:Petr, petschema)
 
-psketch = Sketch(:FG, petschema, Cone[], Cone[], [])
+#########
+# Tests #
+#########
+"""
+Create all petri nets with i S/T/I/O brute force.
+"""
+function all_petri(i::Int)
+  i < 3 || error("don't try with large i like $i")
+  res = Dict()
+  I = @acset S.cset begin S=i; T=i; I=i; O=i end
+  for os in Iterators.product([1:i for _ in 1:i]...)
+    set_subpart!(I, :os, collect(os))
+    for it in Iterators.product([1:i for _ in 1:i]...)
+      set_subpart!(I, :it, collect(it))
+      for si in Iterators.product([1:i for _ in 1:i]...)
+        set_subpart!(I, :is, collect(si))
+        for to in Iterators.product([1:i for _ in 1:i]...)
+          set_subpart!(I, :ot, collect(to))
+          cN = call_nauty(I)
+          res[cN.hsh] = cN.cset
+        end
+      end
+    end
+  end
+  return collect(values(res))
+end
 
-es = EnumState()
+function runtests()
+  I = @acset S.cset begin S=2;T=2;I=2;O=2 end;
+  es = init_db(S,I);
+  chase_db(S,es)
+  expected = all_petri(2)
+  test_models(es, S, expected)
+  return true
+end
 
+end # module

@@ -1,11 +1,16 @@
 module ModEnum
-export chase_db
+export chase_db, test_models, init_db
+
 using ..Sketches
 using ..Models
 using ..DB
 using ..Propagate
 using ..Models: eq_sets
+
 using Catlab.CategoricalAlgebra, Catlab.Theories
+using CSetAutomorphisms
+
+using Test
 using Combinatorics
 
 """
@@ -96,7 +101,10 @@ To do: branching should only consider distinct *orbits* in codomain
 """
 function branch(S::Sketch, J::SketchModel; force=nothing)::Vector{Addition}
   verbose = false
-  if verbose println("entering branch w/ frzoen $(J.frozen)") end
+  if verbose
+    println("entering branch w/ frozen $(J.frozen) and model ");
+    show(stdout, "text/plain", first(crel_to_cset(S,J.model)))
+  end
   if isnothing(force)
     score(f) = sum([src(S,f)∈J.frozen[1], tgt(S,f)∈J.frozen[1]])
     dangling = [score(f)=>f for f in setdiff(elabel(S), J.frozen[2])]
@@ -160,8 +168,14 @@ end
 
 function init_db(S::Sketch, ad::StructACSet)
   es = EnumState()
-  J = add!(S, ad)
-  add_premodel(es,S,J)
+  try
+    J = add!(S, ad)
+    add_premodel(es,S,J)
+  catch a_ModelException
+    if !(a_ModelException isa ModelException)
+      throw(a_ModelException)
+    end
+  end
   return es
 end
 
@@ -191,6 +205,16 @@ function combos_below(m::Int, n::Int)::Vector{Vector{Int}}
     end
   end
   return sort(collect(res))
+end
+
+
+"""
+We can reason what are the models that should come out, but not which order
+they are in, so we make sure canonical hashes match up.
+"""
+function test_models(db::EnumState, S::Sketch, expected)
+  Set(call_nauty(e).hsh for e in expected) == Set(
+      call_nauty(get_model(db,S,m)).hsh for m in db.models)
 end
 
 end # module

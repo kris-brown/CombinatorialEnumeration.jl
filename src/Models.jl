@@ -12,7 +12,7 @@ export SketchModel,
        exec_change,
        rem_dup_relations,
        has_map, fk, add_fk, ModelException
-
+# to do: cut this down to only things end-users would use
 
 using Catlab.CategoricalAlgebra, Catlab.Theories
 import Catlab.CategoricalAlgebra: apex
@@ -107,7 +107,7 @@ function create_premodel(S::Sketch)::SketchModel
     for (k,g) in collect(S.eqs)])
   lim_obs = Set([c.apex for c in vcat(S.cones,S.cocones)])
   freeze_obs = setdiff(Set(vlabel(S)), lim_obs) ∪ one_obs ∪ zero_obs
-  freeze_arrs = Set(hom_out(S,collect(zero_obs)))
+  freeze_arrs = Set{Symbol}(hom_out(S,collect(zero_obs)))
   return SketchModel(J,eqs,cocones,path_eqs, freeze_obs=>freeze_arrs)
 end
 
@@ -168,7 +168,10 @@ function cset_to_crel(S::Sketch, J::StructACSet{Sc}) where Sc
   end
   res
 end
+
 """
+TODO:
+
 There are certain things we wish premodels to abide by, regardless of state of
 information propagation:
 - Equivalence class morphisms are surjective
@@ -212,7 +215,6 @@ struct Addition{S} <: Change{S}
       nd, ncd = nparts(dom(l), s), nparts(codom(l),s)
       nd <= ncd || error("cannot add $s (frozen): $nd -> $ncd")
     end
-
     all(is_injective, [l,r]) || error("span must be monic")
     all(is_natural, [l, r]) || error("naturality")
     all(e->nparts(dom(l), e) == 0, elabel(S)) || error("No FKs in interface")
@@ -427,6 +429,7 @@ end
 fk_in(S::Sketch, J::SketchModel, f::Symbol, y::Int) = fk_in(S,J,f,[y])
 
 function fk_in(S::Sketch, J::SketchModel, f::Symbol, ys::AbstractVector{Int})
+  if isempty(ys) return [] end
   from_map, to_map = add_srctgt(f)
   ys = union([eq_class(J.eqs[tgt(S,f)], y) for y in ys]...)
   fs = vcat(incident(J.model,ys,to_map)...)
@@ -438,13 +441,23 @@ end
 If y is 0, this signals to add a *fresh* element to the codomain.
 """
 function add_fk(S::Sketch,J::SketchModel,f::Symbol,x::Int,y::Int)
+  verbose = false
+  if verbose println("adding fk $f:#$x->#$y") end
   st =  y==0 ? [src(S,f)] :  [src(S,f),tgt(S,f)]
-  I = S.crel(); [add_part!(I, x) for x in st];
+  st_same, xy_same = (src(S,f)==tgt(S,f)), (x == y)
+  I = S.crel();
+  if st_same&&xy_same
+    add_part!(I, st[1])
+    is_it = [1,1]
+  else
+    is_it =  [add_part!(I, x) for x in st];
+  end
   L = deepcopy(I)
-  if y == 0 add_part!(L, tgt(S,f)) end
-  add_part!(L, f; Dict(zip(add_srctgt(f), [1,1]))...)
-  IL = homomorphism(I,L);
-  IR = ACSetTransformation(I, J.model; Dict(zip(st,[[x],[y]]))...)
+  if y == 0 is_it = [1,add_part!(L, tgt(S,f))] end
+  add_part!(L, f; Dict(zip(add_srctgt(f), is_it))...)
+  IL = homomorphism(I,L; initial=Dict(o=>parts(I,o) for o in vlabel(S)));
+  d = st_same ? st[1]=> (xy_same ? [x] : [x,y]) : zip(st,[[x],[y]])
+  IR = ACSetTransformation(I, J.model; Dict(d)...)
   Addition(S,J,IL,IR)
 end
 

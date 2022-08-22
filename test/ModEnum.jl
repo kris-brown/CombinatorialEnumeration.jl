@@ -5,18 +5,9 @@ using Test
 using ModelEnumeration
 using CSetAutomorphisms
 
-using ModelEnumeration.ModEnum: combos_below, branch, chase_db_step!, init_db, add!
+using ModelEnumeration.ModEnum: combos_below
 
 include(joinpath(@__DIR__, "TestSketch.jl"));
-
-"""
-We can reason what are the models that should come out, but not which order
-they are in, so we make sure canonical hashes match up.
-"""
-function test_models(db::EnumState, expected)
-  Set(call_nauty(e).hsh for e in expected) == Set(
-      call_nauty(get_model(db,S,m)).hsh for m in db.models)
-end
 
 
 @test length(combos_below(2, 3)) == 10
@@ -26,7 +17,7 @@ I = @acset S.cset begin A=1;B=1;I=1;a=1 end
 es = init_db(S,I)
 @test length(es) == 1
 chase_db(S,es)
-test_models(es, [@acset(S.cset, begin A=1;B=1;C=1;E=1;I=1;
+test_models(es, S, [@acset(S.cset, begin A=1;B=1;C=1;E=1;I=1;
                                       f=1;g=1;c=1;e=1;a=1;b=1 end)])
 
 # model enumeration where |A| = 1, |B| = 2
@@ -40,14 +31,14 @@ expected = [
   # or they can point to different elements
   @acset(S.cset, begin A=1;B=2;C=1;I=1;f=1;g=2;c=1;a=1;b=1 end)
 ]
-test_models(es, expected)
+test_models(es, S, expected)
 
 # model enumeration where |A| = 2, |B| = 1
 I = @acset S.cset begin A=2;B=1 end;
 es = init_db(S,I);
 chase_db(S,es)
-test_models(es, [@acset(S.cset, begin A=2;B=1;C=1;E=2;I=1; # both A equalized
-                                      f=1;g=1;c=1;e=[1,2];a=1;b=1 end)])
+test_models(es, S, [@acset(S.cset, begin A=2;B=1;C=1;E=2;I=1; # both A equalized
+                                         f=1;g=1;c=1;e=[1,2];a=1;b=1 end)])
 # model enumeration where |A| = 2, |B| = 2
 I = @acset S.cset begin A=2;B=2 end;
 es = init_db(S,I);
@@ -75,6 +66,6 @@ expected = [
   # "a" points to the element that is not equalized.
   @acset(S.cset, begin A=2;B=2;E=1;C=1;I=1;f=[2,1];g=1;c=1;a=1;b=2;e=2 end), # 5
 ]
-test_models(es, expected)
+test_models(es, S, expected)
 
  end # module
