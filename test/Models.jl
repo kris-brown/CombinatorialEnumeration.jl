@@ -1,6 +1,6 @@
 module TestModels
 
-# using Revise
+using Revise
 using Test
 using ModelEnumeration
 using Catlab.CategoricalAlgebra
@@ -60,6 +60,18 @@ ad2 = update_change(S, J, J_update, ad);
 @test nparts(apex(ad), :A) == 2
 @test nparts(apex(ad2), :A) == 1
 
-# To do: test validate, Addition of a disjoint CSet, updating a Merge
+
+# Merging overlapping additions
+J = test_premodel(S, @acset(S.crel, begin A=2;B=2 end))
+a1 = add_fk(S, J, :f, 1, 1)
+a2 = add_fk(S, J, :g, 1, 2)
+a3 = add_fk(S, J, :f, 1, 2)
+a = merge(S,J,a1,a2)
+@test codom(a.l) == @acset S.crel begin A=1;B=2;f=1;g=1;src_f=1;src_g=1;tgt_f=1;tgt_g=2 end
+@test apex(a) == @acset S.crel begin A=1;B=2; end
+a = merge(S,J,[a1,a2,a3])
+
+
+
 
 end # module

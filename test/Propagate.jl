@@ -80,7 +80,7 @@ m, ch = propagate!(S,Jp,adpth_ia)
 @test isempty(ch) # path_eqs are changed, but nothing we can do yet
 @test Jpth.path_eqs[:I] == [[[1],[1,2,3],[1,2,3]]] # before
 @test Jp.path_eqs[:I] == [[[1],[1,2,3],[1]]] # after
-ads = reduce((x,y)->merge(S,Jp, x,y), [
+ads = merge(S,Jp, [
   add_fk(S, Jp, :f, i, j) for (i,j) in [1=>2, 2=>3, 3=>1]])
 m, ch = propagate!(S, Jp, ads)
 # we infer that I->B must be 1.
@@ -92,7 +92,7 @@ exp = @acset S.crel begin I=1;A=3;B=3;f=3;a=1;b=1;
 adpth_ib = add_fk(S, Jpth, :b, 1, 1)
 Jp = deepcopy(Jpth)
 m, ch = propagate!(S,Jp,adpth_ib)
-ads = reduce((x,y)->merge(S,Jp, x,y), [
+ads = merge(S,Jp, [
   add_fk(S, Jp, :f, i, j) for (i,j) in [1=>2,2=>3,3=>1]])
 m, ch = propagate!(S,Jp,ads)
 @test is_isomorphic(codom(exec_change(S,Jp.model,only(ch))), exp)

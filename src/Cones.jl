@@ -55,6 +55,10 @@ If we add *diagram* elements, new cones apex elements may be induced.
 
 Unfortunately we do not use the fact we know the incremental change between
 models to do this more intelligently.
+
+Things to think about:
+- is it better to put all the generate cones in one big Addition or to break it
+  up into smaller Additions?
 """
 function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
                          ci::Int, ch::Change)
@@ -115,6 +119,7 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
     return res
   end
 
+  sums = Addition[]
   query_res = nv(cone_.d) == 0 ? () : query(J, cone_.uwd)
 
   new_cones = Dict{Vector{Int},Union{Nothing,Int}}()
@@ -145,9 +150,12 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
       IJ = ACSetTransformation(I, J; IJd...)
       IR = ACSetTransformation(I, R; IRd...)
       if verbose println("Adding a new cone with legs $qres") end
-      push!(res, Addition(S, J_, IR, IJ))
+      push!(sums, Addition(S, J_, IR, IJ))
       new_cones[qres] = nothing
     end
+  end
+  if !isempty(sums)
+    push!(res, merge(S,J_, sums))
   end
   res
 end

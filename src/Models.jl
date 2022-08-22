@@ -15,7 +15,7 @@ export SketchModel,
 # to do: cut this down to only things end-users would use
 
 using Catlab.CategoricalAlgebra, Catlab.Theories
-import Catlab.CategoricalAlgebra: apex
+import Catlab.CategoricalAlgebra: apex, left, right
 
 using ..Sketches
 
@@ -197,6 +197,8 @@ end
 #########
 abstract type Change{S} end
 apex(c::Change{S}) where S = dom(c.l) # == dom(c.r)
+left(c::Change{S}) where S = c.l
+right(c::Change{S}) where S = c.r
 
 """
 Add elements (but merge none) via a monic partial morphism L↩I↪R, where R is
@@ -215,6 +217,8 @@ struct Addition{S} <: Change{S}
       nd, ncd = nparts(dom(l), s), nparts(codom(l),s)
       nd <= ncd || error("cannot add $s (frozen): $nd -> $ncd")
     end
+    is_injective(l) || error("span L must be monic $(components(l))")
+    is_injective(r) || error("span R must be monic $(components(r))")
     all(is_injective, [l,r]) || error("span must be monic")
     all(is_natural, [l, r]) || error("naturality")
     all(e->nparts(dom(l), e) == 0, elabel(S)) || error("No FKs in interface")
@@ -461,15 +465,40 @@ function add_fk(S::Sketch,J::SketchModel,f::Symbol,x::Int,y::Int)
   Addition(S,J,IL,IR)
 end
 
-function merge(S::Sketch,J::SketchModel,a1::T, a2::T) where T<:Change
-  codom(a1.r) == codom(a2.r) || error("additions don't point to same model")
-  Typ = (a1 isa Addition ? Addition : Merge)
-  Icp = coproduct(apex(a1), apex(a2))
-  IR = universal(Icp, Cospan(a1.r, a2.r))
-  Lcp = coproduct(codom.([a1.l, a2.l])...)
-  IL = universal(Icp, Cospan([
-    a.l⋅i for (a, i) in zip([a1,a2], legs(Lcp))]...))
-  return Typ(S,J,IL,IR)
+
+"""
+Merge two Additions (or possibly Merges, but this hasn't been tested) which may
+be partially overlapping in their maps into the model.
+
+Let Iₒ be the overlap between the two I's, i.e. the pullback. We use this to
+form the new I and R via pushouts. The map from the new I to the new L is given
+by the universal property (as the maps to L are a "bigger" pushout square).
+The map from new I to original R is also given by the same universal property,
+where we form a commutative square using the original maps Iₙ->R.
+   r₁
+  I₁↪R         Iₒ ↪ I₁ ↪ L₁       Iₒ ↪ I₁ ---
+  ↑⌝ ↑ r₂      ↓  ⌜ ↓    |        ↓  ⌜ ↓    |
+  Iₒ↪I₂        I₂ ↪ newI |        I₂ ↪ newI | r₁
+               ↓     !↘⌜ v        |     !↘⌜ v
+               L₂ -----> newL      -------> R
+                                       r₂
+This doesn't generalize to multipushouts/multipullbacks as easily as one would
+hope. If you have 3 Additions that have only pairwise overlap, Iₒ will be empty.
+"""
+merge(S::Sketch, J::SketchModel{X}, xs::AbstractVector) where X =
+ reduce((x,y)->merge(S,J,x,y), xs)
+
+function merge(S::Sketch, J::SketchModel, a1::Addition,a2::Addition)
+  as = [a1,a2]
+  ls, rs = left.(as), right.(as)
+  Io = pullback(rs) # fail if a1 and a2 point to different models
+  newI = pushout(legs(Io))
+  ll = [compose(a,b) for (a,b) in zip(legs(Io), ls)]
+  newL = pushout(ll)
+  il = [compose(a,b) for (a,b) in zip(ls,legs(newL))]
+  newIL = universal(newI, Multicospan(il))
+  newIR = universal(newI, Multicospan(rs))
+  return Addition(S,J,newIL,newIR)
 end
 
 # """
@@ -525,7 +554,7 @@ It is best to run this right after quotienting the equivalence classes.
 # function rem_dup_relations!(S::Sketch, J::StructACSet)
 #   delob = DefaultDict{Symbol, Vector{Int}}(Vector{Int})
 #   # Detect redundant duplicate relation rows
-#   for d in elabel(S) # could be done in parallel
+#   for d in elabel(S) # could be done in parallelShe
 #     dsrc, dtgt = add_srctgt(d)
 #     seen = Set{Tuple{Int,Int}}()
 #     for (i, st) in enumerate(zip(J[dsrc], J[dtgt]))

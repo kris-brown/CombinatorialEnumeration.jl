@@ -5,6 +5,8 @@ using Test
   @test Petri.runtests()
   include(joinpath(@__DIR__, "../data/left_inverse_involution.jl"));
   @test LeftInvInvolution.runtests()
+  include(joinpath(@__DIR__, "../data/equalizer.jl"));
+  @test Equalizer.runtests()
 end
 
 
