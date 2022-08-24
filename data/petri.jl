@@ -51,7 +51,7 @@ end
 
 function runtests()
   I = @acset S.cset begin S=2;T=2;I=2;O=2 end;
-  es = init_db(S,I);
+  es = init_db(S,I,[:S,:T,:I,:O]);
   chase_db(S,es)
   expected = all_petri(2)
   test_models(es, S, expected)

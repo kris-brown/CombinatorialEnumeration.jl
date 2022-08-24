@@ -1,11 +1,11 @@
 module TestModEnum
 
-# using Revise
+using Revise
 using Test
 using ModelEnumeration
 using CSetAutomorphisms
 
-using ModelEnumeration.ModEnum: combos_below
+using ModelEnumeration.ModEnum: combos_below, chase_db_step!
 
 include(joinpath(@__DIR__, "TestSketch.jl"));
 
@@ -14,17 +14,16 @@ include(joinpath(@__DIR__, "TestSketch.jl"));
 
 # model enumeration where |A| = |B| = 1
 I = @acset S.cset begin A=1;B=1;I=1;a=1 end
-es = init_db(S,I)
+es = init_db(S,I, [:A,:B])
 @test length(es) == 1
-chase_db(S,es)
 test_models(es, S, [@acset(S.cset, begin A=1;B=1;C=1;E=1;I=1;
                                       f=1;g=1;c=1;e=1;a=1;b=1 end)])
 
 # model enumeration where |A| = 1, |B| = 2
 I = @acset S.cset begin A=1;B=2;I=1;a=1 end;
-es = init_db(S,I);
+es = init_db(S,I, [:A,:B]);
 @test nparts(es[1].model,:b) == 0
-chase_db(S,es)
+chase_db(S,es);
 expected = [
   # the f&g can point to the same element
   @acset(S.cset, begin A=1;B=2;E=1;C=2;I=1;f=1;g=1;c=[1,2];a=1;b=1;e=1 end),
@@ -35,13 +34,14 @@ test_models(es, S, expected)
 
 # model enumeration where |A| = 2, |B| = 1
 I = @acset S.cset begin A=2;B=1 end;
-es = init_db(S,I);
-chase_db(S,es)
+es = init_db(S,I,[:A,:B]);
+@test nparts(es[1].model, :E) == 2
+chase_db(S,es);
 test_models(es, S, [@acset(S.cset, begin A=2;B=1;C=1;E=2;I=1; # both A equalized
                                          f=1;g=1;c=1;e=[1,2];a=1;b=1 end)])
 # model enumeration where |A| = 2, |B| = 2
 I = @acset S.cset begin A=2;B=2 end;
-es = init_db(S,I);
+es = init_db(S,I, [:A,:B]);
 chase_db(S,es)
 expected = [
   # f&g are both id
@@ -68,4 +68,4 @@ expected = [
 ]
 test_models(es, S, expected)
 
- end # module
+end # module

@@ -2,7 +2,7 @@ module Propagate
 export propagate!
 
 using ..Sketches, ..Models
-using Catlab.CategoricalAlgebra, Catlab.WiringDiagrams, Catlab.Theories
+using Catlab.CategoricalAlgebra, Catlab.Theories
 using DataStructures
 using ..Models: EQ, fk_in, is_total, is_injective, eq_sets, merge_eq
 using ..Sketches: project
@@ -105,7 +105,7 @@ function update_frozen!(S::Sketch,J::SketchModel,m,ch::Change)
   end
   for c in S.cones
     if c.apex ∉ fobs && all(v->v∈fobs, vlabel(c.d)) && all(e->e∈fhoms, elabel(c.d)) && all(
-      l->is_total(S,J,l), unique(last.(c.legs))) &&
+      l->is_total(S,J,l), unique(last.(c.legs)))
       if nparts(codom(ch.l), c.apex) == nparts(apex(ch), c.apex)
         push!(fobs, c.apex); chng |= true
       end

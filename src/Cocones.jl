@@ -3,15 +3,17 @@
 ##########
 
 
+"""Propagate cocone information for cocones that are not frozen"""
 propagate_cocones!(S::Sketch,J::SketchModel,f::CSetTransformation,ch::Change) =
-  vcat([propagate_cocone!(S, J, f, i, ch) for i in 1:length(S.cocones)]...)
+  vcat([propagate_cocone!(S, J, f, i, ch) for i in 1:length(S.cocones)
+        if S.cocones[i].apex ∉ J.frozen[1]]...)
 
 
 """
 Rebuild the cocone equivalence classes (across different tables) from scratch.
 This could be made more incremental using the change + the old cocone data
 """
-function update_cocones!(S::Sketch,J::SketchModel,f::ACSetTransformation,_)
+function update_cocones!(S::Sketch,J::SketchModel,f::ACSetTransformation,ch::Change)
   new_cocones = map(zip(S.cocones, J.cocones)) do (c, (_,_))
 
     # create new aggregation of all tables in the cocone diagram
@@ -37,6 +39,7 @@ function update_cocones!(S::Sketch,J::SketchModel,f::ACSetTransformation,_)
         union!(new_eq, cdict_inv[sT=>s], cdict_inv[tT=>t])
       end
     end
+
     return new_eq => cdict
   end
 
@@ -60,9 +63,9 @@ function propagate_cocone!(S::Sketch, J::SketchModel,f::CSetTransformation, ci::
   cc, (ccdata, cd), res = S.cocones[ci], J.cocones[ci], Change[]
   if verbose println("updating cocone $ci with apex $(cc.apex) po data $(J.cocones)") end
 
-  # We care about, ∀ connected components, which apexes are mapped to
-  ap_to_cc = DefaultDict(()->Set{Int}()) # ap₁ -> [cc₁,cc₂,...]
   # We care about, ∀ apexes, which connected components map to it
+  ap_to_cc = DefaultDict(()->Set{Int}()) # ap₁ -> [cc₁,cc₂,...]
+  # We care about, ∀ connected components, which apexes are mapped to
   cc_to_ap = DefaultDict(()->Set{Int}()) # cc₁ -> [ap₁, ap₂,...]
   for l in last.(cc.legs)
     for p in parts(J.model, src(S,l))
@@ -79,15 +82,55 @@ function propagate_cocone!(S::Sketch, J::SketchModel,f::CSetTransformation, ci::
     if verbose println("MERGING COCONE APEX ELEMS $vs") end
     push!(res, Merge(S,J,Dict(cc.apex=>[vs])))
   end
-  # 2.) check for connected components that cannot possibly be merged
-  startJ = project(S,merge_eq(S,J.model,J.eqs), cc)
+  # 2a) if diagram completely determined, we have one apex elem per connected comp
+  if vlabel(cc) ⊆ J.frozen[1] && elabel(cc) ⊆ J.frozen[2]
+    for cc_root in unique(find_root!(ccdata, i) for i in 1:length(ccdata))
+      if !haskey(cc_to_ap, cc_root)
+        newL, newI = S.crel(), S.crel()
+        ILd, IRd = [DefaultDict{Symbol,Vector{Int}}(()->Int[]) for _ in 1:2]
+        add_part!(newL, cc.apex)
+        ccinds = [i for i in 1:length(ccdata) if find_root!(ccdata, i)==cc_root]
+        for (cctab, ccind) in cd[ccinds]
+          for l in filter(l->src(S,l)==cctab,unique(last.(legs(cc))))
+            lsrctgt = add_srctgt(l)
+            add_part!(newI, cctab)
+            lpart = add_part!(newL, cctab)
+            add_part!(newL, l; Dict(zip(lsrctgt, [lpart, 1]))...)
+            push!(IRd[cctab], ccind); push!(ILd[cctab], lpart)
+          end
+        end
+        IL = ACSetTransformation(newI,newL; ILd...)
+        IR = ACSetTransformation(newI,J.model; IRd...)
+        ad = Addition(S,J,IL,IR)
+        push!(res, ad)
+      else
+        # set all legs if not yet determined
+        for (cctab, ccind) in cd[[i for i in 1:length(ccdata) if find_root!(ccdata, i) == cc_root]]
+          for l in filter(l->src(S,l)==cctab,unique(last.(legs(cc))))
+            lsrc,ltgt = add_srctgt(l)
+            if isempty(incident(J.model, ccind, lsrc))
+              error("""We're expecting the legs to be filled already...
+                    we can fill this in if that's not the case though""")
+            end
+          end
+        end
+      end
+      # we can add apex elements
+    end
+  else
 
-  for vs in collect.(filter(x->length(x)>1, collect(values(ap_to_cc))))
-    if !connection_possible(S, startJ, cc, ccdata, cd, vs)
-      throw(ModelException())
+    # 2.) check for connected components that cannot possibly be merged
+    startJ = project(S,merge_eq(S,J.model,J.eqs), cc)
+    for vs in collect.(filter(x->length(x)>1, collect(values(ap_to_cc))))
+      # conservative approach - don't try anything if tables not frozen
+      # TODO revisit this assumption, maybe something can still be inferred?
+      if vlabel(cc) ⊆ J.frozen[1]
+        if !connection_possible(S, startJ, cc, ccdata, cd, vs)
+          throw(ModelException())
+        end
+      end
     end
   end
-
   res
 end
 

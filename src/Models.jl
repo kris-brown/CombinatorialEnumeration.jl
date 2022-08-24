@@ -57,7 +57,16 @@ struct ModelException <: Exception end
 # Those elements each are of length n, for the n objects in the path_eq diagram
 # Each of those n elements is a list of the possible values that the table could
 # be.
-const EQ = Dict{Symbol, Vector{Vector{AbstractVector{Int}}}}
+const EQ = Dict{Symbol,
+                Vector{
+                       Vector{
+                              Union{
+                                    Nothing,
+                                    AbstractVector{Int}
+                              }
+                       }
+                      }
+                }
 
 """
 Data of a premodel plus all the sketch constraint information
@@ -86,45 +95,78 @@ end
 
 """
 Create an empty premodel (C-Rel).
-The only tables that can be populated are empty limit cones.
 """
-function create_premodel(S::Sketch)::SketchModel
+function create_premodel(S::Sketch, n=Dict{Symbol, Int}(), freeze_obs=Symbol[])::SketchModel
   J = S.crel()
+  # handle one_obs
   one_obs = Set([c.apex for c in S.cones if nv(c.d)==0])
-  zero_obs = Set([c.apex for c in S.cocones if nv(c.d)==0])
-  # todo: loop through things which have morphisms INTO zero obs...
-  # these are also (implicitly) zero obs
-  eqs = Dict([o=>IntDisjointSets(o ∈ one_obs ? add_part!(J, o) : 0)
-              for o in vlabel(S)])
-  # cones = [Dict{Vector{Int},Int}(
-  #     c.apex ∈ one_obs ? [Int[]=>1] : []) for c in S.cones]
-  cocones = map(S.cocones) do c
-    tabs = unique(filter(o->o ∈ one_obs, vlabel(c.d)))
-    IntDisjointSets(length(tabs)) => [t=>1 for t in tabs]
+  for o in one_obs
+    if haskey(n, o) n[o] == 1 || error("bad")
+    else  n[o] = 1
+    end
   end
-  path_eqs = EQ([
-    k=>[[v ∈ one_obs ? [1] : [] for v in vlabel(g)]]
-    for (k,g) in collect(S.eqs)])
+  # handle zero obs
+  zero_obs = Set([c.apex for c in S.cocones if nv(c.d)==0]) ∪ [
+    v for v in freeze_obs if get(n,v,0) == 0]
+  change = true
+  while change  # Maps into zero obs are zero obs
+    change = false
+    for z in zero_obs
+      for h in hom_in(S, z)
+        if dom(S,h) ∉ zero_obs
+          push!(zero_obs, dom(S,h)); change = true
+        end
+      end
+    end
+  end
+
+  for o in zero_obs
+    if haskey(n, o) n[o] == 0 || error("bad")
+    else  n[o] = 0
+    end
+  end
+
+  for (k,v) in collect(n) add_parts!(J, k, v) end
+
   lim_obs = Set([c.apex for c in vcat(S.cones,S.cocones)])
-  freeze_obs = setdiff(Set(vlabel(S)), lim_obs) ∪ one_obs ∪ zero_obs
+  freeze_obs = Set(freeze_obs ∪ one_obs ∪ zero_obs)
   freeze_arrs = Set{Symbol}(hom_out(S,collect(zero_obs)))
+
+  eqs = Dict([o=>IntDisjointSets(nparts(J, o)) for o in vlabel(S)])
+  cocones = Vector{Pair{IntDisjointSets{Int}, Vector{Pair{Symbol,Int}}}}(
+   map(S.cocones) do c
+    tabs = vcat(map(vlabel(c.d)) do v
+      Pair{Symbol,Int}[v => i for i in parts(J,v)]
+    end...)
+    return IntDisjointSets(length(tabs)) => tabs
+  end)
+  path_eqs = EQ(map(collect(S.eqs)) do (k,g)
+    k=>map(parts(J,k)) do p
+      map(enumerate(vlabel(g))) do (i,v)
+        if i == 1 return [p]
+        elseif v ∈ freeze_obs return parts(J,v)
+        else return nothing
+        end
+      end
+    end
+  end)
   return SketchModel(J,eqs,cocones,path_eqs, freeze_obs=>freeze_arrs)
 end
 
-"""A premodel that does not have cone/cocone/patheq data. Mainly for testing"""
-function test_premodel(S::Sketch, J::StructACSet{Sc}) where Sc
-  e = Dict([o=>IntDisjointSets(nparts(J, o)) for o in vlabel(S)])
-  cs = map(S.cocones) do c
-    ts = vcat([[t=>i for i in parts(J, t)] for t in unique(vlabel(c))]...)
-    IntDisjointSets(length(ts)) => ts
+"""
+A premodel that does not have correct cone/cocone/patheq data.
+Mainly for testing.
+"""
+function test_premodel(S::Sketch, J::StructACSet{Sc}; freeze=Symbol[]) where Sc
+  for c in filter(c->nv(c.d) == 0, S.cones)
+    if nparts(J, c.apex) == 0 add_part!(J, c.apex) end
   end
-  path_eqs = EQ([k=>[] for (k,t) in collect(S.eqs)]) # todo
-  one_obs = Set([c.apex for c in S.cones if nv(c.d)==0])
-  zero_obs = Set([c.apex for c in S.cocones if nv(c.d)==0])
-  lim_obs = Set([c.apex for c in vcat(S.cones,S.cocones)])
-  freeze_obs = setdiff(Set(vlabel(S)), lim_obs) ∪ one_obs ∪ zero_obs
-  freeze_arrs = Set{Symbol}() # todo: all maps out of all zero obs
-  SketchModel{Sc}(J, e,cs,path_eqs,freeze_obs=>freeze_arrs)
+  J_ = create_premodel(S, Dict(k=>nparts(J,k) for k in vlabel(S)), freeze)
+  Jrel = cset_to_crel(S,J)
+  ad = Addition(S,J_,homomorphism(J_.model,Jrel;monic=true),id(J_.model))
+  J_.model = codom(exec_change(S,J_.model,ad))
+  # TODO fix cocones/patheqs to first appx?
+  return J_
 end
 
 
@@ -294,6 +336,14 @@ struct Merge{S} <: Change{S}
     all(e->nparts(I, e) == 0, elabel(S)) || error("No FKs in interface")
     return new{Sc}(ir, ij)
   end
+  function Merge(S::Sketch,_::SketchModel,l::ACSetTransformation{Sc},r::ACSetTransformation{Sc}) where Sc
+    dom(l) == dom(r)
+    is_surjective(l) || error("L $l")
+    is_injective(r) || error("R $r")
+    all(is_natural, [l, r]) || error("naturality")
+    all(e->nparts(dom(l), e) == 0, elabel(S)) || error("No FKs in interface")
+    new{Sc}(l,r)
+  end
 end
 
 function Base.show(io::IO, a::Merge{S}) where S
@@ -301,7 +351,7 @@ function Base.show(io::IO, a::Merge{S}) where S
     n = [length(preimage(a.l[v], x)) for x in parts(codom(a.l), v)]
     isempty(n) ? "" : "$v:$(join(n,"|"))"
   end), ",")
-  print(io, "Addition($body)")
+  print(io, "Merge($body)")
 end
 
 """
@@ -488,8 +538,9 @@ hope. If you have 3 Additions that have only pairwise overlap, Iₒ will be empt
 merge(S::Sketch, J::SketchModel{X}, xs::AbstractVector) where X =
  reduce((x,y)->merge(S,J,x,y), xs)
 
-function merge(S::Sketch, J::SketchModel, a1::Addition,a2::Addition)
+function merge(S::Sketch, J::SketchModel, a1::Change{Sc},a2::Change{Sc}) where Sc
   as = [a1,a2]
+  T =  a1 isa Addition ? Addition : Merge
   ls, rs = left.(as), right.(as)
   Io = pullback(rs) # fail if a1 and a2 point to different models
   newI = pushout(legs(Io))
@@ -498,7 +549,7 @@ function merge(S::Sketch, J::SketchModel, a1::Addition,a2::Addition)
   il = [compose(a,b) for (a,b) in zip(ls,legs(newL))]
   newIL = universal(newI, Multicospan(il))
   newIR = universal(newI, Multicospan(rs))
-  return Addition(S,J,newIL,newIR)
+  return T(S,J,newIL,newIR)
 end
 
 # """

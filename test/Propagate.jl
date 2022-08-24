@@ -1,11 +1,11 @@
 
 module TestPropagate
 
-# using Revise
+using Revise
 using Test
 using ModelEnumeration
 using DataStructures
-using ModelEnumeration.Models: EQ
+using ModelEnumeration.Models: EQ, test_premodel
 
 const no_freeze = Set{Symbol}()=>Set{Symbol}()
 
@@ -17,25 +17,11 @@ include(joinpath(@__DIR__, "TestSketch.jl"));
 
 # Test model
 #-----------
-J0model = @acset S.crel begin
-  A=3;B=3;E=3;C=3;I=1; a=1;b=1;f=3;g=3;c=3;e=3;
-  src_f=[1,2,3]; tgt_f=[1,2,3]; src_g=[1,2,3]; tgt_g=[1,2,3]
-  src_a=1; tgt_a=1; src_b=1; tgt_b=1;
-  src_c=[1,2,3]; tgt_c=[1,2,3]; src_e=[1,2,3]; tgt_e=[1,2,3];
-end
-J0eqs = Dict([v=>IntDisjointSets(nparts(J0model, v)) for v in vlabel(S)])
-J0cocones = [IntDisjointSets(6) => vcat([[x=>i for i in 1:3]
-                                         for x in [:A,:B]]...),
-             IntDisjointSets(0)=>Pair{Symbol,Int}[]]
-for (i,j) in [1=>4,2=>5,3=>6]
-  union!(J0cocones[1][1], i, j)
+J0model = @acset S.cset begin
+  A=3;B=3;E=3;C=3;I=1; a=1;b=1;f=[1,2,3];g=[1,2,3];c=[1,2,3];e=[1,2,3];
 end
 
-J0patheqs = EQ(map(collect(S.eqs)) do (v,d)
-  v=> (v == :I ?  [[[1], [1,2,3],[1,2,3]]] : [[[p]] for p in parts(J0model, v)])
-end)
-
-J0 = SketchModel(J0model, J0eqs, J0cocones, J0patheqs, no_freeze)
+J0 = test_premodel(S,J0model,freeze=[:B])
 
 
 
@@ -57,6 +43,7 @@ m, ch = propagate!(S, J0_, me)
 @test apex(only(ch)) == @acset S.crel begin A=2 end
 
 # merge A1 and A2: should induce merge of B1 and B2 as well as E1 and E2
+J0 = test_premodel(S,J0model) # nothing frozen
 me = Merge(S, deepcopy(J0), Dict([:A=>[[1,2]]]))
 J0_ = deepcopy(J0)
 m, ch = propagate!(S, J0_, me)
@@ -68,11 +55,8 @@ m, ch = propagate!(S, J0_, me)
 #-------------------------
 
 Jpth_model = @acset S.crel begin A=3; B=3; I=1 end
-Jpth_eqs = Dict([v=>IntDisjointSets(nparts(Jpth_model, v)) for v in vlabel(S)])
-Jpth_cocones = [IntDisjointSets(9) => vcat([[x=>i for i in 1:3] for x in [:C,:A,:B]]...), IntDisjointSets(0)=>Pair{Symbol,Int}[]]
-Jpth = SketchModel(Jpth_model, Jpth_eqs, Jpth_cocones, J0patheqs,
-                   Set([:A,:B])=>Set{Symbol}())
 
+Jpth = test_premodel(S,Jpth_model,freeze=[:A,:B])
 adpth_ia = add_fk(S, Jpth, :a, 1, 1)
 
 Jp = deepcopy(Jpth)
@@ -84,18 +68,20 @@ ads = merge(S,Jp, [
   add_fk(S, Jp, :f, i, j) for (i,j) in [1=>2, 2=>3, 3=>1]])
 m, ch = propagate!(S, Jp, ads)
 # we infer that I->B must be 1.
-exp = @acset S.crel begin I=1;A=3;B=3;f=3;a=1;b=1;
+expect = @acset S.crel begin I=1;A=3;B=3;f=3;a=1;b=1;
   src_a=1;tgt_a=1;src_b=1;tgt_b=1; src_f=[1,2,3]; tgt_f=[1,2,3]end
-@test is_isomorphic(codom(exec_change(S,Jp.model,only(ch))), exp)
+@test is_isomorphic(codom(exec_change(S,Jp.model,only(ch))), expect)
 
 # Test backwards inference given a frozen "f"
+Jpth = test_premodel(S,Jpth_model,freeze=[:A,:B])
+
 adpth_ib = add_fk(S, Jpth, :b, 1, 1)
 Jp = deepcopy(Jpth)
 m, ch = propagate!(S,Jp,adpth_ib)
 ads = merge(S,Jp, [
   add_fk(S, Jp, :f, i, j) for (i,j) in [1=>2,2=>3,3=>1]])
 m, ch = propagate!(S,Jp,ads)
-@test is_isomorphic(codom(exec_change(S,Jp.model,only(ch))), exp)
+@test is_isomorphic(codom(exec_change(S,Jp.model,only(ch))), expect)
 
 # Pullback tests
 ################
@@ -120,14 +106,10 @@ PB = Sketch(:PB, pbschema; cones=[Cone(csp,:D,[1=>:π₁,2=>:π₂])])
 
 # Initial data
 #-------------
-PBmodel = @acset PB.crel begin A=3;B=3;C=3;D=3;f=3;g=3;π₁=3;π₂=3
-  src_f=[1,2,3];src_g=[1,2,3]; tgt_f=[1,1,3]; tgt_g=[1,2,3]
-  src_π₁=[1,2,3]; src_π₂=[1,2,3]; tgt_π₁=[1,2,3]; tgt_π₂=[1,1,3]
+PBmodel = @acset PB.cset begin A=3;B=3;C=3;D=3;f=[1,1,3];g=[1,2,3];π₁=[1,2,3]; π₂=[1,1,3]
 end
-PBeqs = Dict([v=>IntDisjointSets(3) for v in vlabel(PB)])
-PBpatheqs =EQ([v=>[[[i]] for i in parts(PBmodel, v)] for v in vlabel(PB)])
 
-PB0 = SketchModel(PBmodel, PBeqs, typeof(J0cocones)(), PBpatheqs, no_freeze)
+PB0 = test_premodel(PB, PBmodel)
 
 # Changes
 #--------
@@ -146,15 +128,9 @@ me_PBD = Merge(PB, PB0_, Dict([:D=>[[2,3]]]))
 
 # pushout sketch (to test colimits)
 PO = dual(PB)
-POmodel = @acset PO.crel begin A=3;B=3;C=3;D=3;f=3;g=3;π₁=3;π₂=3
-  src_f=[1,2,3];src_g=[1,2,3]; tgt_f=[1,1,3]; tgt_g=[1,2,3]
-  src_π₁=[1,2,3]; src_π₂=[1,2,3]; tgt_π₁=[1,2,3]; tgt_π₂=[1,1,3]
+POmodel = @acset PO.cset begin A=3;B=3;C=3;D=3;f=[1,1,3];g=[1,2,3];π₁=[1,2,3];π₂=[1,1,3]
 end
-POdata = [IntDisjointSets(9)=>vcat([[x=>i for i in 1:3] for x in [:C,:A,:B]]...)]
-for (a,b) in [1=>4,1=>7,2=>5,2=>8,3=>6,3=>9]
-  union!(POdata[1][1], a,b)
-end
-PO0 = SketchModel(POmodel, PBeqs, POdata, PBpatheqs, no_freeze)
+PO0 = test_premodel(PO,POmodel)
 
 # merge two elements in the diagram leg
 #----------------------------------
@@ -183,14 +159,10 @@ length(ch) == 3 # merge D due to cocone constraint, A/B due to functionality
 
 # Add a FK which makes it impossible for two groups to be connected
 #-----------------------------------------------------------------------
-PO1model = @acset PO.crel begin A=1;B=2;C=1;D=1;π₁=1;π₂=2
-  src_π₁=1; src_π₂=[1,2]; tgt_π₁=1; tgt_π₂=1
+PO1model = @acset PO.cset begin A=1;B=2;C=1;D=1;π₁=[1];π₂=[1,1]
 end
-PO1eqs = Dict([v=>IntDisjointSets(nparts(PO1model,v)) for v in vlabel(PB)])
-PO1patheqs =EQ([v=>[[[i]] for i in parts(PO1model, v)] for v in vlabel(PB)])
 
-PO1 = SketchModel(PO1model, PO1eqs, [IntDisjointSets(4)=>[:C=>1,:A=>1,:B=>1,:B=>2]], PO1patheqs,
-                  Set([:A,:B,:C])=>Set{Symbol}())
+PO1 = test_premodel(PO,PO1model,freeze=[:A,:B,:C])
 
 ad = add_fk(PO,PO1,:f,1,1)
 PO1_ = deepcopy(PO1)

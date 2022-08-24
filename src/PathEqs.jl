@@ -4,7 +4,9 @@ using Catlab.Graphs
 ###########
 
 """
-With an update, elements can be permuted, merged, and added.
+Path Eq cached state involves lots of subsets, each of which can be
+permuted, merged, or added to.
+
 """
 function update_patheqs!(S::Sketch, J::SketchModel,f::CSetTransformation)
   μ = Dict(v=>[find_root!(J.eqs[v],f[v](i)) for i in parts(dom(f), v)] for v in vlabel(S))
@@ -24,6 +26,7 @@ function update_patheqs!(S::Sketch, J::SketchModel,f::CSetTransformation)
         poss = J.path_eqs[v][only(preim)]
         if verbose && ntriv(v) println("\t\tpreim=1 w/ corresponding poss $poss") end
         return map(zip(vlabel(S.eqs[v]), poss)) do (tab, tabposs)
+          if isnothing(tabposs) return nothing end
           new_elems = filter(x->isempty(preimage(f[tab],x)), parts(J.model,tab))
           if verbose && ntriv(v) println("\t\t\tconsidering $tab w/ μ($tabposs)+$new_elems= $(unique(μ[tab][tabposs]) ∪ new_elems)") end
           return unique(μ[tab][tabposs]) ∪ new_elems
@@ -72,6 +75,7 @@ function propagate_patheq!(S::Sketch, J::SketchModel,f::CSetTransformation, c::C
         for (i, vvs) in enumerate(collect(J.path_eqs[v]))
           if !isempty(preimage(f[v], i))
             for (vl, poss) in zip(vlabel(S.eqs[v]), vvs)
+              if isnothing(poss) continue end
               # what if poss==1 because things got merged, not b/c it was known?
               if vl == av && length(poss) > 1
                 append!(poss, added)
@@ -90,7 +94,7 @@ function propagate_patheq!(S::Sketch, J::SketchModel,f::CSetTransformation, c::C
     end
   end
   if verbose && !isempty(to_check) println("tables to check for updates: $v: $to_check") end
-  return propagate_patheq!(S, J, v, to_check)
+  return propagate_patheq!(S, J,f, v, to_check)
 end
 
 
@@ -104,7 +108,7 @@ possibilities in the domain to the preimage.
 If we discover, for any starting vertex, that there is an edge that has a
 singleton domain and codomain, then we can add that FK via an Addition.
 """
-function propagate_patheq!(S::Sketch, J::SketchModel, v::Symbol, tabs::Set{Symbol})
+function propagate_patheq!(S::Sketch, J::SketchModel, m, v::Symbol, tabs::Set{Symbol})
   res = Change[]
   G = S.eqs[v]
   fo, fh = J.frozen
@@ -122,11 +126,11 @@ function propagate_patheq!(S::Sketch, J::SketchModel, v::Symbol, tabs::Set{Symbo
         f, s, t, Stab, Ttab = [G[f_i,x] for x in Gfks]
         f_s, f_t = add_srctgt(f)
         Seq,Teq = [J.eqs[x] for x in [Stab,Ttab]]
-        if [Stab,Ttab] ⊈ fo continue end # only infer things if obs are frozen
         if verbose println("\tcheck out edge #$f_i ($f:$Stab#$s->$Ttab#$t)") end
 
-        # Things we can infer if map has been completely determined already
-        if is_total(S,J,f)
+         # Things we can infer if map has been completely determined already
+         # and if obs are frozen
+         if is_total(S,J,f) && [Stab,Ttab] ⊆ fo
           im_eqs = Set([find_root!(Teq, u) for u in unique(J.model[f_t])])
           # every element in the image of f
           im = [p for p in parts(J.model, Ttab) if find_root!(Teq, p) ∈ im_eqs]
@@ -152,24 +156,28 @@ function propagate_patheq!(S::Sketch, J::SketchModel, v::Symbol, tabs::Set{Symbo
           end
         end
 
+        # Things that we can infer even if the map is not yet total
+        # or if objects are not frozen.
         for (i, poss) in enumerate(J.path_eqs[v])
           if verbose println("\t\tconsidering poss from $tab#$i: $poss") end
 
           # we can set the fk for f of a certain element
-          if length(poss[s]) == 1
+          if !isnothing(poss[s]) && length(poss[s]) == 1
             out = fk(S,J,f,only(poss[s])) # whether the fk is already set
 
             # fk is not set and there is only one possibility
-            if isnothing(out) && length(poss[t]) == 1
+            if isnothing(out) && !isnothing(poss[t]) && length(poss[t]) == 1
                 push!(res, add_fk(S,J,f,only(poss[s]),only(poss[t])))
 
             # fk is set: we can reduce the possibilities of codom to one
-            elseif !isnothing(out) # we can reduce the tgt
+            elseif !isnothing(out) && poss[t] != [out] # we can reduce the tgt to one thing
               if verbose println("\t\t\twe can infer $f for root $(only(poss[1])) from $(only(poss[s])) to $Ttab ($(poss[t]))") end
-              n_t = length(poss[t])
-              intersect!(poss[t],[out])
-              !isempty(poss[t]) || throw(ModelException())
-             if length(poss[t]) < n_t push!(tabs, Ttab) end
+              if isnothing(poss[t]) || any(pt->in_same_set(J.eqs[Ttab], out, pt), poss[t])
+                poss[t] = [out];
+              else
+                throw(ModelException())
+              end
+               push!(tabs, Ttab)
             end
           end
         end

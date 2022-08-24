@@ -91,7 +91,8 @@ end
 
 
 function add_model(es::EnumState, S::Sketch, J::SketchModel;
-                   parent::Int, relm_hsh::Union{String, Nothing}=nothing)::Int
+                   parent::Union{Nothing,Int}=nothing,
+                   relm_hsh::Union{String, Nothing}=nothing)::Int
   !last(crel_to_cset(S, J.model)) || error("adding a partial model")
   pid = add_premodel(es, S, J; parent=parent, chash=relm_hsh)
   push!(es.models, pid)

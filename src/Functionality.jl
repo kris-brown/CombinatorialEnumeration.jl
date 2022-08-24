@@ -53,6 +53,11 @@ class, merge.
 """
 function quotient_functions!(S::Sketch, J_::SketchModel, h::CSetTransformation,
                              ad::Addition)
+  verbose = false
+  if verbose println("quotienting with h=$(Any[k=>v for (k,v) in pairs(components(h)) if !isempty(collect(v))]) and ad $ad ")
+    show(stdout,"text/plain",J_.model)
+    println("addition L $(Any[k=>v for (k,v) in pairs(components(ad.l)) if !isempty(collect(v))])")
+  end
   L, I = codom(ad.l), apex(ad)
   res = Merge[]
   J = J_.model
@@ -62,7 +67,8 @@ function quotient_functions!(S::Sketch, J_::SketchModel, h::CSetTransformation,
     # (But should we care about newly introduced srcs which have
     # multiple newly-introduced outgoing FKs?)
     for e in parts(L, d)
-      i_src = preimage(ad.l[srcobj], J[e, dsrc])
+      if verbose println("d $d:$srcobj->$tgtobj #$e ad.l[srcobj] $(ad.l[srcobj])") end
+      i_src = preimage(ad.l[srcobj], L[e, dsrc])
       if !isempty(i_src)
         # For such a relation, get the model element corresponding to the src
         s = (ad.r ⋅ h)[srcobj](only(i_src))
@@ -70,7 +76,9 @@ function quotient_functions!(S::Sketch, J_::SketchModel, h::CSetTransformation,
         # Get the eq classes of things the source is related to
         t_eqcs = Set([find_root!(J_.eqs[tgtobj], t) for t in J[rel, dtgt]])
         if length(t_eqcs) > 1
-          push!(res, Merge(S, J_, Dict([tgtobj=>[[t, t_eqcs|>collect]]])))
+          if verbose println("isrc $i_src t_eqcs $t_eqcs") end
+          if tgtobj ∈ J_.frozen[1] throw(ModelException()) end
+          push!(res, Merge(S, J_, Dict([tgtobj=>[collect(t_eqcs)]])))
         end
       end
     end

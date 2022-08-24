@@ -22,24 +22,33 @@ is_no_op(ch::Change) = all(f->dom(f)==codom(f) && isperm(collect(f)),
 
 
 """
-Take a mix of additions and merges and execute the merges until there are
-only additions left.
+Take a mix of Additions and Merges and execute the Merges until there are
+only Additions left.
+
+We may need to pass in the pending additions into propagate! so that we avoid
+infinite loops (we keep trying to add something that needs to be added, even
+though we've already queued it up to be added.)
 """
 function add_merge!(S::Sketch, J::SketchModel, ch::Addition)
   verbose = false
   if verbose println("\tadd_merge! addition $ch ") end
   m, changes = propagate!(S, J, ch)
-  while !all(c->c isa Addition, changes)
-    c = popat!(changes, findfirst(c->c isa Merge, changes))
+  additions = filter(c->c isa Addition, changes)
+  merges = filter(c->c isa Merge, changes)
+  while !isempty(merges)
+    c = merge(S,J,merges)
+    merges = Merge[]
     if is_no_op(c) println("no op!"); continue end
     if verbose println("\t\tadd_merge! starting while loop w/ $c (remaining: $(Vector{Any}(changes))") end
     m′, cs = propagate!(S, J, c) # do we want to do something with this morphism?
-    changes = update_changes(S,J,m′,changes) # update existing matches
+    additions = update_changes(S,J,m′,additions) # update existing matches
+    for newc in cs
+      newc isa Addition ? push!(additions, newc) : push!(merges, newc)
+    end
     m = m ⋅ m′
-    append!(changes, cs)
   end
   if verbose println("\t add_merge! generated $(length(changes)) new changes: $changes") end
-  return m => Vector{Addition}(changes)
+  return m => isempty(additions) ? nothing : merge(S,J,additions)
 end
 
 """
@@ -49,45 +58,24 @@ Run additions until there's nothing to add or merge. I.e. go as far as you can w
 function add!(S::Sketch, J::SketchModel, ch::Addition)
   J = deepcopy(J)
   verbose = false
-  changes = Addition[ch]
   m = id(J.model)
-  while !isempty(changes)
-    c = pop!(changes)
-    if is_no_op(c) && verbose println("no op!"); continue end
-
-    if verbose println("starting add! while loop with $c (remaining: $(Vector{Any}(changes)))") end
-    codom(c.r) == J.model || error("unpropagated ch $c")
-    m′, cs = add_merge!(S, J, c)
-    for c in cs
-      codom(c.r) == J.model || error("new change not updated $c")
-    end
-    changes = update_changes(S,J,m′,changes) # update existing matches
-    for chng in changes
-      codom(chng.r) == J.model || error("a change not updated $chng")
-    end
+  while true
+    if verbose println("starting add! with $ch") end
+    codom(ch.r) == J.model || error("unpropagated ch $ch")
+    m′, ch = add_merge!(S, J, ch)
     m = m⋅m′
-    append!(changes, cs)
+    if isnothing(ch) return m => J end
   end
-  return m => J
 end
 
 """initialise a sketch model and propagate"""
-function add!(S::Sketch, ch::StructACSet)
-  for one_ob in [c.apex for c in S.cones if nv(c.d)==0]
-    if nparts(ch, one_ob) == 0 add_part!(ch, one_ob)
-    elseif nparts(ch, one_ob) > 1 rem_parts!(ch, one_ob, 1:nparts(ch, one_ob)-1)
-    end
+function add!(S::Sketch, ch::StructACSet, freeze=Symbol[])
+  for o in [c.apex for c in S.cones if nv(c.d)==0]
+    if nparts(ch, o) == 0 add_part!(ch, o) end
   end
-  for zero_ob in [c.apex for c in S.cocones if nv(c.d)==0]
-    rem_parts!(ch, zero_ob, 1:nparts(ch, zero_ob))
-  end
-
-  J=create_premodel(S)
+  J=create_premodel(S, Dict(v=>nparts(ch,v) for v in vlabel(S)), freeze)
   ch = cset_to_crel(S, ch)
-  freeze = J.frozen
-  J.frozen = Set{Symbol}()=>Set{Symbol}()
-  ad = Addition(S, J, only(homomorphisms(J.model, ch)), id(J.model))
-  J.frozen = freeze
+  ad = Addition(S, J, homomorphism(J.model, ch; monic=true), id(J.model))
   _, J = add!(S, J, ad)
   return J
 end
@@ -97,7 +85,8 @@ Take a premodel and branch on a FK (favor FKs between 'frozen' objects).
 (potentially a smarter algorithm can determine where would be best to branch).
 For each branch, saturate with `add!`.
 
-To do: branching should only consider distinct *orbits* in codomain
+TODO: branching should only consider distinct *orbits* in codomain
+      so we should be storing the Nauty res in the db
 """
 function branch(S::Sketch, J::SketchModel; force=nothing)::Vector{Addition}
   verbose = false
@@ -166,15 +155,14 @@ function chase_db(S::Sketch, db::EnumState)
   end
 end
 
-function init_db(S::Sketch, ad::StructACSet)
+function init_db(S::Sketch, ad::StructACSet, freeze=Symbol[])
   es = EnumState()
-  try
-    J = add!(S, ad)
-    add_premodel(es,S,J)
-  catch a_ModelException
-    if !(a_ModelException isa ModelException)
-      throw(a_ModelException)
-    end
+  J = add!(S, ad, freeze)
+  _, bad = crel_to_cset(S,J.model)
+  if !bad # NEW MODEL
+    add_model(es, S, J)
+  else
+    add_premodel(es, S, J)
   end
   return es
 end

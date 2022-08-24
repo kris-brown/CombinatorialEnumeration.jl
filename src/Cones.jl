@@ -1,3 +1,4 @@
+using Catlab.WiringDiagrams
 
 # Limits
 ########
@@ -76,8 +77,11 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
     return res
   end
 
-  if verbose println("updating cone $ap with m[apex] $(collect(m[ap]))\n$(crel_to_cset(S,J)[1])")
-  println(J_.eqs) end
+  if verbose
+    println("updating cone $ap with m[apex] $(collect(m[ap]))")
+    show(stdout,"text/plain", crel_to_cset(S,J)[1])
+    println(J_.eqs)
+  end
 
   # Merged cone elements induced merged values along their legs
   cones = DefaultDict{Vector{Int},Vector{Int}}(()->Int[])
@@ -126,6 +130,7 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
   for qres_ in unique(collect.(zip(query_res...)))
     qres = [find_root!(J_.eqs[tgt(S,l)],y)
             for (y,l) in zip(qres_, unique(last.(cone_.legs)))]
+    if verbose println("qres_ $qres_ qres $qres") end
     # Add a new cone if not seen before
     if !haskey(cones, qres)
       I, R = S.crel(), S.crel()

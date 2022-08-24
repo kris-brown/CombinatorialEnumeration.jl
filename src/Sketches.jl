@@ -9,7 +9,7 @@ using Catlab.Programs
 using Catlab.CategoricalAlgebra.CSetDataStructures: struct_acset
 import Catlab.Theories: dual
 import Catlab.Graphs: src, tgt, topological_sort, inneighbors, outneighbors
-
+import Catlab.CategoricalAlgebra: legs
 using CSetAutomorphisms
 
 using AutoHashEquals
@@ -95,6 +95,7 @@ legs - a list of pairs, where the first element selects an object in the diagram
   end
 end
 
+legs(c::Cone) = c.legs
 vlabel(C::Cone) = vlabel(C.d)
 elabel(C::Cone) = elabel(C.d)
 cone_leg(c::Int, i::Int) = Symbol("$(add_cone(c))_$i")
@@ -477,11 +478,12 @@ If the apex of the cone has multiple legs with the same morphism, then by
 functionality the junctions they point to must be merged, which we enforce.
 """
 function cone_query(d::LabeledGraph, legs)::StructACSet
+  verbose = false
   vars = [Symbol("x$i") for i in nparts(d, :V)]
   typs = ["$x(_id=x$i)" for (i, x) in enumerate(d[:vlabel])]
   bodstr = vcat(["begin"], typs)
-  for e in elabel(d)
-    s=src(d, e); t=tgt(d,e); push!(bodstr, "$e(src_$e=x$s, tgt_$e=x$t)")
+  for (i,e) in filter(x->x[1]∉refl(d), collect(enumerate(d[:elabel])))
+    s=src(d, i); t=tgt(d,i); push!(bodstr, "$e(src_$e=x$s, tgt_$e=x$t)")
   end
   push!(bodstr, "end")
   exstr = "($(join(["$(v)_$i=x$k" for vs in values(vars)
@@ -492,8 +494,9 @@ function cone_query(d::LabeledGraph, legs)::StructACSet
   ctx = Meta.parse(ctxstr)
   hed = Expr(:where, ex, ctx)
   bod = Meta.parse(join(bodstr, "\n"))
-  # println("ex $exstr\n ctx $ctxstr\n bod $(join(bodstr, "\n"))")
+  if verbose println("ex $exstr\n ctx $ctxstr\n bod $(join(bodstr, "\n"))") end
   res = parse_relation_diagram(hed, bod)
+  if true
   # Merge junctions which
   μl = [minimum(findall(==(l), last.(legs))) for l in last.(legs)]
   μj = vcat(μl, length(legs)+1 : nparts(res,:Junction))
@@ -510,6 +513,7 @@ function cone_query(d::LabeledGraph, legs)::StructACSet
     Box=[i for i in parts(res, :Box) if i ∈ μb],
     Port=[i for i in parts(res, :Port) if i ∈ μp],
     OuterPort=parts(res,:OuterPort))
+  end
   return res2
 end
 

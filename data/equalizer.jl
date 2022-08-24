@@ -20,7 +20,7 @@ S = Sketch(:Equalizer, eqschema, cones=[Cone(eqconed, :E, [1=>:e,2=>:e])]);
 
 function runtests()
   I = @acset S.cset begin A=2;B=2 end
-  es = init_db(S,I)
+  es = init_db(S,I, [:A,:B])
   chase_db(S,es)
   ms = [get_model(es,S,i) for i in es.models];
 
