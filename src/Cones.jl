@@ -133,9 +133,9 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
     if verbose println("qres_ $qres_ qres $qres") end
     # Add a new cone if not seen before
     if !haskey(cones, qres)
-      I, R = S.crel(), S.crel()
-      IJd, IRd = [DefaultDict(()->Int[]) for _ in 1:2]
-      add_part!(R, ap)
+      I, L = S.crel(), S.crel()
+      IJd, ILd = [DefaultDict(()->Int[]) for _ in 1:2]
+      add_part!(L, ap)
       lrmap = Dict{Pair{Symbol, Int}, Int}()
       for (res_v, l) in zip(qres, unique(last.(cone_.legs)))
         ls, lt = add_srctgt(l)
@@ -145,17 +145,17 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
           tr = lrmap[lr]
         else
           add_part!(I, legtab)
-          tr = add_part!(R, legtab)
+          tr = add_part!(L, legtab)
           push!(IJd[legtab], res_v)
-          push!(IRd[legtab], tr)
+          push!(ILd[legtab], tr)
           lrmap[lr] = tr
         end
-        add_part!(R, l; Dict([ls=>1,lt=>tr])...)
+        add_part!(L, l; Dict([ls=>1,lt=>tr])...)
       end
       IJ = ACSetTransformation(I, J; IJd...)
-      IR = ACSetTransformation(I, R; IRd...)
+      IL = ACSetTransformation(I, L; ILd...)
       if verbose println("Adding a new cone with legs $qres") end
-      push!(sums, Addition(S, J_, IR, IJ))
+      push!(sums, Addition(S, J_, IL, IJ))
       new_cones[qres] = nothing
     end
   end

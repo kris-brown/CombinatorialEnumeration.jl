@@ -1,6 +1,7 @@
 module Surj
 
-using Revise
+# using Revise
+using Test
 using Catlab.CategoricalAlgebra
 using ModelEnumeration
 
@@ -22,13 +23,13 @@ cc = Cone(@acset(LabeledGraph, begin V=2;E=2;vlabel=[:c,:a];
 
 S = Sketch(:surj, schema, cones=[c], cocones=[cc])
 
-function runtests()
+# function runtests()
   I = @acset S.cset begin a=3;b=2 end
   es = init_db(S,I,[:a,:b])
   chase_db(S,es)
   expected = @acset S.cset begin a=3;b=2;c=5;
     d=[1,1,2];d0=[1,1,2,2,3];d1=[1,2,1,2,3] end
-  is_isomorphic(get_model(es,S,only(es.models)), expected)
-end
+  @test is_isomorphic(get_model(es,S,only(es.models)), expected)
+# end
 
 end # module

@@ -1,7 +1,7 @@
 module LeftInvInvolution
 
+# using Revise
 using Test
-using Revise
 using Catlab.CategoricalAlgebra
 using ModelEnumeration
 

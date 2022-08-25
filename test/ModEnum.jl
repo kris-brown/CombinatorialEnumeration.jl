@@ -1,6 +1,6 @@
 module TestModEnum
 
-using Revise
+# using Revise
 using Test
 using ModelEnumeration
 using CSetAutomorphisms
@@ -17,7 +17,7 @@ I = @acset S.cset begin A=1;B=1;I=1;a=1 end
 es = init_db(S,I, [:A,:B])
 @test length(es) == 1
 test_models(es, S, [@acset(S.cset, begin A=1;B=1;C=1;E=1;I=1;
-                                      f=1;g=1;c=1;e=1;a=1;b=1 end)])
+                                         f=1;g=1;c=1;e=1;a=1;b=1 end)])
 
 # model enumeration where |A| = 1, |B| = 2
 I = @acset S.cset begin A=1;B=2;I=1;a=1 end;

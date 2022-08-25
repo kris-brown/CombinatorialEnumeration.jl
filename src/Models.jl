@@ -88,7 +88,7 @@ frozen: whether a table/FK can possibly change. Initially, non-limit objects
   model::StructACSet{S}
   eqs::Dict{Symbol, IntDisjointSets{Int}}
   # cones::Vector{Dict{Vector{Int},Union{Nothing,Int}}}
-  cocones::Vector{Pair{IntDisjointSets{Int}, Vector{Pair{Symbol,Int}}}}
+  cocones::Vector{Pair{IntDisjointSets{Int}, Vector{Tuple{Symbol,Int,Int}}}}
   path_eqs::EQ
   frozen::Pair{Set{Symbol},Set{Symbol}}
 end
@@ -133,12 +133,23 @@ function create_premodel(S::Sketch, n=Dict{Symbol, Int}(), freeze_obs=Symbol[]):
   freeze_arrs = Set{Symbol}(hom_out(S,collect(zero_obs)))
 
   eqs = Dict([o=>IntDisjointSets(nparts(J, o)) for o in vlabel(S)])
-  cocones = Vector{Pair{IntDisjointSets{Int}, Vector{Pair{Symbol,Int}}}}(
+  cocones = Vector{Pair{IntDisjointSets{Int}, Vector{Tuple{Symbol,Int,Int}}}}(
    map(S.cocones) do c
-    tabs = vcat(map(vlabel(c.d)) do v
-      Pair{Symbol,Int}[v => i for i in parts(J,v)]
+    tabs = vcat(map(enumerate(vlabel(c.d))) do (iv,v)
+      Tuple{Symbol,Int,Int}[(v,iv,i) for i in parts(J,v)]
     end...)
-    return IntDisjointSets(length(tabs)) => tabs
+    ids = IntDisjointSets(length(tabs))
+    ldict = [l=>[ti for (ti, l_) in c.legs if l_==l] for l in unique(last.(c.legs))]
+    for (l,ltabs) in filter(x->length(x[2])>1, ldict)
+      ref_inds = findall(x->x[2]==first(ltabs), tabs)
+      for ltab in ltabs[2:end]
+        for (i,j) in zip(ref_inds, findall(x->x[2]==ltab, tabs))
+          union!(ids, i, j)
+        end
+      end
+    end
+
+    return ids => tabs
   end)
   path_eqs = EQ(map(collect(S.eqs)) do (k,g)
     k=>map(parts(J,k)) do p
@@ -361,6 +372,8 @@ returns a model morphism from applying the change.
 function exec_change(S::Sketch, J::StructACSet{Sc},e::Change{Sc}
                      )::ACSetTransformation where {Sc}
   codom(e.r) == J || error("Cannot apply change. No match.")
+  is_natural(e.r) || error(println.(components(e.r)))
+  dom(e.l) == dom(e.r) || error("baddom")
   res = pushout(e.l, e.r) |> collect |> last
   return res ⋅ rem_dup_relations(S, codom(res))
 end

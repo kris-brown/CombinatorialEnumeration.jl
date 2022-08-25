@@ -39,7 +39,6 @@ that need to be made.
 function propagate!(S::Sketch, J::SketchModel{Sc}, c::Change{Sc}) where Sc
   m = exec_change(S, J.model, c)
   verbose = false
-  if verbose println("m[:A] $(collect(m[:A])) m[:B] $(collect(m[:B]))") end
   # update model
   J.model = codom(m)
   # show(stdout, "text/plain", J.model)
@@ -92,7 +91,7 @@ end
 
 """
 Update homs when their src/tgt are frozen and are fully identified.
-Update limit objects when their diagrams are frozen.
+Update (co)limit objects when their diagrams are frozen.
 TODO: do this incrementally based on change data
 """
 function update_frozen!(S::Sketch,J::SketchModel,m,ch::Change)
@@ -114,9 +113,7 @@ function update_frozen!(S::Sketch,J::SketchModel,m,ch::Change)
   for (c,(cdata,cdict)) in zip(S.cocones,J.cocones)
     if c.apex ∉ fobs && all(v->v∈fobs, vlabel(c.d)) && all(e->e∈fhoms, elabel(c.d)) && all(
       l->is_total(S,J,l), unique(last.(c.legs)))
-      if [c.apex=>i for i in parts(J.model, c.apex)] ⊆ collect(keys(cdict))
-        push!(fobs, c.apex); chng |= true
-      end
+      push!(fobs, c.apex); chng |= true # do we need to check that cdict isn't missing something?
     end
   end
   J.frozen = fobs => fhoms

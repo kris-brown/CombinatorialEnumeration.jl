@@ -1,13 +1,11 @@
 
 module TestPropagate
 
-using Revise
+# using Revise
 using Test
 using ModelEnumeration
 using DataStructures
 using ModelEnumeration.Models: EQ, test_premodel
-
-const no_freeze = Set{Symbol}()=>Set{Symbol}()
 
 # Sketches
 ##########
@@ -128,7 +126,8 @@ me_PBD = Merge(PB, PB0_, Dict([:D=>[[2,3]]]))
 
 # pushout sketch (to test colimits)
 PO = dual(PB)
-POmodel = @acset PO.cset begin A=3;B=3;C=3;D=3;f=[1,1,3];g=[1,2,3];π₁=[1,2,3];π₂=[1,1,3]
+POmodel = @acset PO.cset begin
+  A=3; B=3; C=3; D=3; f=[1,1,3]; g=[1,2,3]; π₁=[1,2,3]; π₂=[1,1,3]
 end
 PO0 = test_premodel(PO,POmodel)
 
@@ -138,6 +137,7 @@ PO0_ = deepcopy(PO0);
 me_POA = Merge(PO, PO0_, Dict([:A=>[[2,3]]]))
 PO0_ = deepcopy(PO0);
 m, chs = propagate!(PO,PO0_,me_POA)
+
 ch1,ch2 = chs
 # there are two changes that result. We quotient D via functionality of π₁. We
 # also quotient D because π₁ is a cocone leg and there are multiple apex
