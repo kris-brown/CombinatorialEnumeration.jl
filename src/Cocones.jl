@@ -1,4 +1,20 @@
 using ..Models: is_surjective
+
+"""
+Compute a normal form for IntDisjointSets so that equivalent ones can be
+identified
+"""
+function norm_eq(x::IntDisjointSets{Int})::Vector{Int}
+  clsses = Vector{Union{Int,Nothing}}(fill(nothing, length(x)))
+  Vector{Int}(map(1:length(x)) do i
+    eqc = find_root(x,i)
+    if isnothing(clsses[eqc])
+      clsses[eqc] = length(clsses) - count(isnothing, clsses) + 1
+    end
+    clsses[eqc]
+  end)
+end
+
 # Colimits
 ##########
 
@@ -92,7 +108,7 @@ function propagate_cocone!(S::Sketch, J::SketchModel,f::CSetTransformation, ci::
   verbose = false
   cc, (ccdata, cd), res = S.cocones[ci], J.cocones[ci], Change[]
   if verbose println("updating cocone $ci with frozen $(J.frozen) apex $(cc.apex) po data $(J.cocones) and ")
-  show(stdout,"text/plain",crel_to_cset(S,J.model)[1])
+  show(stdout,"text/plain",crel_to_cset(S, J.model)[1])
   end
   # We care about, ∀ apexes, which connected components map to it
   ap_to_cc = DefaultDict(()->Set{Int}()) # ap₁ -> [cc₁,cc₂,...]
@@ -165,9 +181,8 @@ function propagate_cocone!(S::Sketch, J::SketchModel,f::CSetTransformation, ci::
   # cardinality checks if the apex # is known
   if cc.apex ∈ J.frozen[1]
     startJ = project(S,merge_eq(S,J.model,J.eqs), cc)
-    mn, mx = [minmax_groups(S,startJ, cc, ccdata, cd; is_min=x) for x in [true,false]]
+    mn, mx = [minmax_groups(S,startJ,J.frozen, cc, ccdata, cd; is_min=x) for x in [true,false]]
     if verbose println("mn $mn -- parts $(nparts(J.model, cc.apex)) -- mx $mx\n")
-    show(stdout, "text/plain", J.model)
     end
     if !(mn <= nparts(J.model, cc.apex) <= mx)
       throw(ModelException())
@@ -194,8 +209,8 @@ end
 
 """
 The minimum # of connected components in a colimit diagram (or maximum)
-This is a simple branching search problem except we'd like to be able to reason
-even about tables that are not yet frozen.
+This would be a simple branching search problem except we'd like to be able to
+reason even about tables that are not yet frozen (could grow or merge).
 
 If the diagram is a DAG with loops, we can say that, if there exists an unfrozen
 table joining two other tables, that it's possible for all the elements to be
@@ -203,35 +218,110 @@ collapsed into one group (in case we are trying to minimize groups) and, if
 there exists an unfrozen table that is terminal, that there could exist MAXINT
 groups.
 """
-function minmax_groups(S::Sketch,J_orig::StructACSet,cc::Cone,
+function minmax_groups(S::Sketch,J_orig::StructACSet,freeze,cc::Cone,
                     conn_orig::IntDisjointSets{Int},
                     cd::Vector{Tuple{Symbol,Int,Int}}; is_min::Bool=true)
   verbose = false
+  cc.is_dag || error("This only works with dag cocones")
+  ofreeze,hfreeze = freeze
+  legtabs = unique(first.(cc.legs))
   connd = Dict(v=>k for (k,v) in enumerate(cd))
-  queue = [J_orig=>conn_orig]
-  min_g = length(conn_orig) # highest it could be
+  n_g = num_groups(conn_orig)
   minmax = is_min ? min : max
-  if is_min
-    # for each unfrozen table, add all possible maps out
-  else
-    # if any terminal unfrozen tables, immediately return MAXINT
+  J_orig = deepcopy(J_orig)
+
+  d_no_loop = deepcopy(cc.d)
+
+  # For an unfrozen object, the table may be empty, so we cannot
+  empty_unfrozen_dict = Dict()
+
+  # Table #2 ↦ indices [3,4,5] in cd, for example
+  tab_dict = DefaultDict{Int,Vector{Int}}(()->Int[])
+  for (i,(_,v,_)) in enumerate(cd)
+    push!(tab_dict[v], i)
   end
+  tab_colors(con, tab::Int) = [find_root!(con, i) for i in tab_dict[tab]]
+
+  rem_edges!(d_no_loop, [i for (i,(s,t)) in
+                         enumerate(zip(cc.d[:src],cc.d[:tgt])) if s==t])
+
+  poss = [deepcopy(conn_orig)]
   if verbose
-    println("$(is_min ? "min" : "max") # of connected components in $cd ?");
-    show(stdout,"text/plain",J_orig)
+    println("$(is_min ? "min" : "max") # of connected components in $cd ? initial n_g $n_g ");
+    show(stdout,"text/plain",crel_to_cset(S,J_orig)[1])
   end
-  while !isempty(queue)
-    J, conn = pop!(queue)
-    min_g = minmax(min_g, num_groups(conn))
-    d = sort(filter(x->!isempty(x[2]),
-      [e=>setdiff(parts(J,src(S,e)), J[add_src(e)]) for e in elabel(cc)]),
-      by=x->length(x[2]))
-    if !isempty(d) # work still remaining to be done on this branch
-      e, unassgn = first(d)
-      error("TODO e $e unassgn $unassgn")
+
+  # an unfrozen table that has a leg into the apex could have any number of
+  # things, so the max number of groups is anything.
+  if !is_min && cc.d[legtabs, :vlabel] ⊈ ofreeze
+    return typemax(Int)
+  end
+  if verbose println("\tlegtabs $legtabs ⊈ ofreeze $ofreeze") end
+
+  for v in reverse(vertices(cc.d))
+    new_poss = []
+    sTab = cc.d[v, :vlabel]
+    e_is = setdiff(incident(cc.d, v, :src), refl(cc.d))
+    if isempty(e_is) continue end
+    es, t_is = cc.d[e_is, :elabel], cc.d[e_is, :tgt]
+    tTabs = cc.d[t_is, :vlabel]
+    if verbose println("\tconsidering $sTab#$v w/ es $es") end
+    for conn in poss
+      tCols = [tab_colors(conn, tTab) for tTab in t_is]
+      if sTab ∉ ofreeze
+        # Union everything below if we hit an unfrozen table and are MINIMIZing
+        if is_min
+          aps = [connd[x] for x in filter(x->x[2]∈[v,t_is...], cd)]
+          if isempty(aps)
+            nothing # nothing to do?
+          else
+            ap1, all_parts... = aps
+            for ap in all_parts union!(conn, ap1, ap) end
+          end
+        else
+          # assume the unfrozen table gets quotiented to 1 element if MAXXing
+          # so we only need to consider options that merge one element per targ
+          seen = Dict()
+          for combo in Base.product(tCols...)
+            push!(new_poss, deepcopy(conn))
+            c1, cs... = combo
+            for c in cs  union!(new_poss[end], c1, c) end
+          end
+        end
+      else
+        # branch on all possible FK assignments
+        tCols = map(tab_dict[v]) do src_i
+          (tab_check,tab_i_check,s_part) = cd[src_i]
+          tab_check == sTab || error("$tab_check != $sTab")
+          v == tab_i_check || error("$v != $tab_i_check")
+          s_eqc = find_root!(conn, src_i)
+          vcat(map(zip(es,t_is)) do (e, t_i)
+            e_src, e_tgt = add_srctgt(e)
+            if isempty(incident(J_orig, s_part, e_src))
+              [s_eqc=>t_eqc for t_eqc in unique(tab_colors(conn, t_i))]
+            else
+              [nothing]
+            end
+          end...)
+        end
+        for combo in Base.product(tCols...)
+          push!(new_poss, deepcopy(conn))
+          for c in filter(x->!isnothing(x),combo)
+            union!(new_poss[end], c[1],c[2])
+            # error("to implement: Tcols $tCols combo $combo ($c)")
+          end
+
+        end
+      end
+      n_g = minmax(n_g, num_groups(conn))
     end
+    poss = unique(norm_eq, [poss..., new_poss...])
   end
-  return min_g
+  for conn in poss
+    n_g = minmax(n_g, num_groups(conn))
+  end
+  if verbose println("\t**returning $n_g**\n\n") end
+  return n_g
 end
 
 """

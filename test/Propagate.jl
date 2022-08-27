@@ -1,4 +1,3 @@
-
 module TestPropagate
 
 # using Revise
@@ -30,23 +29,25 @@ J0 = test_premodel(S,J0model,freeze=[:B])
 R = @acset(S.crel, begin A=1;B=1;f=1;g=1;src_f=1;tgt_f=1;src_g=1;tgt_g=1 end)
 ad = Addition(S, J0, R)
 J0_ = deepcopy(J0)
-m, ch = propagate!(S, J0_, ad)
-@test codom(only(ch).l) == @acset S.crel begin A=1;E=1;e=1;src_e=1;tgt_e=1 end
+m, mch, ach = propagate!(S, J0_, ad)
+@test is_no_op(mch)
+@test codom(ach.l) == @acset S.crel begin A=1;E=1;e=1;src_e=1;tgt_e=1 end
 
 # merge cone apexes
 me = Merge(S, deepcopy(J0), Dict([:E=>[[1,2]]]))
 J0_ = deepcopy(J0);
-m, ch = propagate!(S, J0_, me)
-@test codom(only(ch).l) == @acset S.crel begin A=1 end
-@test apex(only(ch)) == @acset S.crel begin A=2 end
+m, mch, ach = propagate!(S, J0_, me)
+@test is_no_op(ach)
+@test codom(mch.l) == @acset S.crel begin A=1 end
+@test apex(mch) == @acset S.crel begin A=2 end
 
 # merge A1 and A2: should induce merge of B1 and B2 as well as E1 and E2
 J0 = test_premodel(S,J0model) # nothing frozen
 me = Merge(S, deepcopy(J0), Dict([:A=>[[1,2]]]))
 J0_ = deepcopy(J0)
-m, ch = propagate!(S, J0_, me)
-@test all(nparts(codom(c.l),v)==1 && nparts(apex(c),v)==2
-          for (c,v) in zip(ch,[:B,:E]))
+m, mch, ach = propagate!(S, J0_, me)
+@test is_no_op(ach)
+@test all(v->nparts(codom(mch.l),v)==1 && nparts(apex(mch),v)==2,  [:B,:E])
 
 
 # Test path eq propagation
@@ -58,28 +59,32 @@ Jpth = test_premodel(S,Jpth_model,freeze=[:A,:B])
 adpth_ia = add_fk(S, Jpth, :a, 1, 1)
 
 Jp = deepcopy(Jpth)
-m, ch = propagate!(S,Jp,adpth_ia)
-@test isempty(ch) # path_eqs are changed, but nothing we can do yet
+m, mch, ach = propagate!(S,Jp,adpth_ia)
+@test is_no_op(mch) # path_eqs are changed, but nothing we can do yet
+@test is_no_op(ach) # path_eqs are changed, but nothing we can do yet
 @test Jpth.path_eqs[:I] == [[[1],[1,2,3],[1,2,3]]] # before
 @test Jp.path_eqs[:I] == [[[1],[1,2,3],[1]]] # after
 ads = merge(S,Jp, [
   add_fk(S, Jp, :f, i, j) for (i,j) in [1=>2, 2=>3, 3=>1]])
-m, ch = propagate!(S, Jp, ads)
+m, mch, ach = propagate!(S, Jp, ads)
+@test is_no_op(mch)
 # we infer that I->B must be 1.
 expect = @acset S.crel begin I=1;A=3;B=3;f=3;a=1;b=1;
   src_a=1;tgt_a=1;src_b=1;tgt_b=1; src_f=[1,2,3]; tgt_f=[1,2,3]end
-@test is_isomorphic(codom(exec_change(S,Jp.model,only(ch))), expect)
+@test is_isomorphic(codom(exec_change(S,Jp.model,ach)), expect)
 
 # Test backwards inference given a frozen "f"
 Jpth = test_premodel(S,Jpth_model,freeze=[:A,:B])
 
 adpth_ib = add_fk(S, Jpth, :b, 1, 1)
 Jp = deepcopy(Jpth)
-m, ch = propagate!(S,Jp,adpth_ib)
+m, mch, ach = propagate!(S,Jp,adpth_ib)
 ads = merge(S,Jp, [
   add_fk(S, Jp, :f, i, j) for (i,j) in [1=>2,2=>3,3=>1]])
-m, ch = propagate!(S,Jp,ads)
-@test is_isomorphic(codom(exec_change(S,Jp.model,only(ch))), expect)
+m, mch, ach = propagate!(S,Jp,ads)
+@test is_no_op(mch)
+
+@test is_isomorphic(codom(exec_change(S,Jp.model,ach)), expect)
 
 # Pullback tests
 ################
@@ -136,15 +141,12 @@ PO0 = test_premodel(PO,POmodel)
 PO0_ = deepcopy(PO0);
 me_POA = Merge(PO, PO0_, Dict([:A=>[[2,3]]]))
 PO0_ = deepcopy(PO0);
-m, chs = propagate!(PO,PO0_,me_POA)
-
-ch1,ch2 = chs
+m, mch, ach = propagate!(PO,PO0_,me_POA)
+@test is_no_op(ach)
 # there are two changes that result. We quotient D via functionality of π₁. We
 # also quotient D because π₁ is a cocone leg and there are multiple apex
 # elements that are pointed to by the same connected component
-@test nparts(apex(ch1), :D) == 2
-@test apex(ch1) == apex(ch2)
-@test codom(ch1.l) == codom(ch2.l)
+@test nparts(apex(mch), :D) == 2
 @test num_groups(PO0_.cocones[1][1]) == 2
 
 # merge two elements in the diagram apex
@@ -152,9 +154,11 @@ ch1,ch2 = chs
 PO0_ = deepcopy(PO0);
 me_POC = Merge(PO, PO0_, Dict([:C=>[[2,3]]]))
 PO0_ = deepcopy(PO0);
-m, ch = propagate!(PO,PO0_,me_POC)
+m, mch, ach = propagate!(PO,PO0_,me_POC)
 @test num_groups(PO0_.cocones[1][1]) == 2
-length(ch) == 3 # merge D due to cocone constraint, A/B due to functionality
+@test nparts(apex(mch), :D) == 2
+@test nparts(apex(mch), :A) == 2
+@test nparts(apex(mch), :B) == 2
 
 
 # Add a FK which makes it impossible for two groups to be connected
@@ -172,8 +176,10 @@ PO1_ = deepcopy(PO1)
 #-----------------------------------------------------------------------
 ad_extraC = deepcopy(ad)
 adL = deepcopy(codom(ad_extraC.l)); add_part!(adL, :C)
-ad_extraC = Addition(PO, PO1, homomorphism(apex(ad), adL), ad.r)
+ad_extraC = Addition(PO, PO1, homomorphism(apex(ad), adL;monic=true), ad.r)
 PO1_ = deepcopy(PO1)
-propagate!(PO,PO1_,ad_extraC)
+m, mch, ach = propagate!(PO,PO1_,ad_extraC)
+@test is_no_op(mch)
+# @test nparts(codom(ach.l), :f) == 2
 
 end # module

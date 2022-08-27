@@ -3,8 +3,20 @@ using Catlab.WiringDiagrams
 # Limits
 ########
 
-propagate_cones!(S::Sketch, J::SketchModel, f::CSetTransformation, ch::Change) =
-  vcat([propagate_cone!(S, J, f, i, ch) for i in 1:length(S.cones)]...)
+function propagate_cones!(S::Sketch, J::SketchModel, f::CSetTransformation, ch::Change)
+  # vcat([propagate_cone!(S, J, f, i, ch) for i in 1:length(S.cones)]...)
+  verbose = false
+  res = Change[]
+  for (i,c) in enumerate(S.cones)
+    legcond = any(l->!is_surjective(f[l]), vcat(elabel(c),vlabel(c)))
+    if legcond || !([c.apex,vlabel(c)...]⊆J.frozen[1] && ((last.(c.legs) ∪ elabel(c)) ⊆ J.frozen[2]))
+      append!(res, propagate_cone!(S, J, f, i, ch))
+    else
+      if verbose println("skipping cone $i w/ frozen $(J.frozen)") end
+    end
+  end
+  res
+end
 
 
 
@@ -79,7 +91,7 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
 
   if verbose
     println("updating cone $ap with m[apex] $(collect(m[ap]))")
-    show(stdout,"text/plain", crel_to_cset(S,J)[1])
+    show(stdout,"text/plain", J)
     println(J_.eqs)
   end
 

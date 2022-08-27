@@ -4,7 +4,7 @@ export propagate!
 using ..Sketches, ..Models
 using Catlab.CategoricalAlgebra, Catlab.Theories
 using DataStructures
-using ..Models: EQ, fk_in, is_total, is_injective, eq_sets, merge_eq
+using ..Models: EQ, fk_in, is_total, is_injective, eq_sets, merge_eq, is_surjective
 using ..Sketches: project
 
 include(joinpath(@__DIR__, "Functionality.jl"))
@@ -35,8 +35,12 @@ end
 When we take a change and apply it, we need to update the (co)cone data and
 path equation possibilities in addition to checking for new merges/additions
 that need to be made.
+
+We may be propagating a change while there is already an addition queued.
 """
-function propagate!(S::Sketch, J::SketchModel{Sc}, c::Change{Sc}) where Sc
+function propagate!(S::Sketch, J::SketchModel{Sc}, c::Change{Sc},
+                    queued=nothing) where Sc
+  if isnothing(queued) queued = Addition(S,J) end
   m = exec_change(S, J.model, c)
   verbose = false
   # update model
@@ -44,15 +48,19 @@ function propagate!(S::Sketch, J::SketchModel{Sc}, c::Change{Sc}) where Sc
   # show(stdout, "text/plain", J.model)
 
   update_eqs!(J,m)
-  update_frozen!(S,J,m,c)
-  if verbose println("\t\t\tnew frozen $(J.frozen)") end
+  if verbose println("\t\told frozen $(J.frozen)") end
+  update_frozen!(S,J,m,c,queued)
+  if verbose println("\t\tnew frozen $(J.frozen)") end
   update_patheqs!(S, J, m)
   update_cocones!(S,J,m,c)
 
   # update (co)cones patheqs and quotient by functionality
-  m=>vcat(set_terminal(S,J),
-    quotient_functions!(S,J,m,c), propagate_cones!(S,J,m,c),
-    propagate_cocones!(S,J,m,c), propagate_patheqs!(S,J,m,c))
+  updates = vcat(set_terminal(S,J),
+  quotient_functions!(S,J,m,c), propagate_cones!(S,J,m,c),
+  propagate_cocones!(S,J,m,c), propagate_patheqs!(S,J,m,c))
+  m_update = merge(S,J,Merge[u for u in updates if u isa Merge])
+  a_update = merge(S,J,Addition[u for u in updates if u isa Addition])
+  (m, m_update, a_update)
 end
 
 """
@@ -94,30 +102,32 @@ Update homs when their src/tgt are frozen and are fully identified.
 Update (co)limit objects when their diagrams are frozen.
 TODO: do this incrementally based on change data
 """
-function update_frozen!(S::Sketch,J::SketchModel,m,ch::Change)
+function update_frozen!(S::Sketch,J::SketchModel,m, ch::Change, queued::Addition)
   fobs, fhoms = J.frozen
   chng = false
+  is_iso(x) = is_injective(ch.l[x]) && is_surjective(ch.l[x])
+  is_isoq(x) = is_injective(queued.l[x]) && is_surjective(queued.l[x])
   for e in elabel(S)
-    if src(S,e) ∈ fobs && is_total(S,J,e) && e ∉ fhoms
+    if src(S,e) ∈ fobs && is_total(S,J,e) && e ∉ fhoms && is_isoq(e)
       push!(fhoms,e); chng |= true
     end
   end
   for c in S.cones
     if c.apex ∉ fobs && all(v->v∈fobs, vlabel(c.d)) && all(e->e∈fhoms, elabel(c.d)) && all(
-      l->is_total(S,J,l), unique(last.(c.legs)))
-      if nparts(codom(ch.l), c.apex) == nparts(apex(ch), c.apex)
+      l->is_total(S,J,l), unique(last.(c.legs))) && is_iso(c.apex) && all(is_iso, vcat(vlabel(c), elabel(c)))
+      if all(is_iso, [c.apex,last.(c.legs)...])
         push!(fobs, c.apex); chng |= true
       end
     end
   end
   for (c,(cdata,cdict)) in zip(S.cocones,J.cocones)
     if c.apex ∉ fobs && all(v->v∈fobs, vlabel(c.d)) && all(e->e∈fhoms, elabel(c.d)) && all(
-      l->is_total(S,J,l), unique(last.(c.legs)))
+      l->is_total(S,J,l), unique(last.(c.legs))) && is_iso(c.apex)
       push!(fobs, c.apex); chng |= true # do we need to check that cdict isn't missing something?
     end
   end
   J.frozen = fobs => fhoms
-  if chng update_frozen!(S,J,m,ch) end
+  if chng update_frozen!(S,J,m,ch, queued) end
 end
 
 

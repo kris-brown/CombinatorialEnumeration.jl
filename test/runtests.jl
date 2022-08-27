@@ -32,4 +32,8 @@ end
   @test Coequalizer.runtests()
   include(joinpath(@__DIR__, "../data/coproduct.jl"));
   @test Coproduct.runtests()
+  include(joinpath(@__DIR__, "../data/surj.jl"));
+  @test Surj.runtests()
+  include(joinpath(@__DIR__, "../data/jointsurj.jl"));
+  @test JointSurj.runtests()
 end

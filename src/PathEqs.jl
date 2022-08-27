@@ -26,7 +26,13 @@ function update_patheqs!(S::Sketch, J::SketchModel,f::CSetTransformation)
         poss = J.path_eqs[v][only(preim)]
         if verbose && ntriv(v) println("\t\tpreim=1 w/ corresponding poss $poss") end
         return map(zip(vlabel(S.eqs[v]), poss)) do (tab, tabposs)
-          if isnothing(tabposs) return nothing end
+          if isnothing(tabposs)
+            if tab ∉ J.frozen[1]
+              return nothing
+            else
+              return parts(J.model, tab) |> collect
+            end
+          end
           new_elems = filter(x->isempty(preimage(f[tab],x)), parts(J.model,tab))
           if verbose && ntriv(v) println("\t\t\tconsidering $tab w/ μ($tabposs)+$new_elems= $(unique(μ[tab][tabposs]) ∪ new_elems)") end
           return unique(μ[tab][tabposs]) ∪ new_elems

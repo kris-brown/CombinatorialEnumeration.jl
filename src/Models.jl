@@ -7,6 +7,7 @@ export SketchModel,
        Addition,
        Merge,
        Change,
+       is_no_op,
        update_changes,
        update_change,
        exec_change,
@@ -282,6 +283,7 @@ end
 """Easier constructor, when the addition has zero overlap with the old model"""
 Addition(S, old::SketchModel{Sc}, new::StructACSet{Sc}) where Sc =
   Addition(S, old, create(new), create(old.model))
+Addition(S, old::SketchModel) = Addition(S,old,S.crel())
 
 function Base.show(io::IO, a::Addition{S}) where S
   body = join(filter(x->!isempty(x), map(ob(S)) do v
@@ -356,6 +358,9 @@ struct Merge{S} <: Change{S}
     new{Sc}(l,r)
   end
 end
+
+Merge(S, old::SketchModel) = Merge(S,old,Dict{Symbol,Vector{Vector{Int}}}())
+
 
 function Base.show(io::IO, a::Merge{S}) where S
   body = join(filter(x->!isempty(x), map(ob(S)) do v
@@ -548,8 +553,8 @@ where we form a commutative square using the original maps Iₙ->R.
 This doesn't generalize to multipushouts/multipullbacks as easily as one would
 hope. If you have 3 Additions that have only pairwise overlap, Iₒ will be empty.
 """
-merge(S::Sketch, J::SketchModel{X}, xs::AbstractVector) where X =
- reduce((x,y)->merge(S,J,x,y), xs)
+merge(S::Sketch, J::SketchModel{X}, xs::AbstractVector{T}) where {X,T} =
+  isempty(xs) ? T(S,J) : reduce((x,y)->merge(S,J,x,y), xs)
 
 function merge(S::Sketch, J::SketchModel, a1::Change{Sc},a2::Change{Sc}) where Sc
   as = [a1,a2]
@@ -579,6 +584,13 @@ function eq_sets(eq::IntDisjointSets; remove_singles::Bool=false)::Set{Set{Int}}
 end
 
 
+
+"""
+Applying some changes makes other changes redundant. This detects when we
+can ignore a change
+"""
+is_no_op(ch::Change) = all(f->dom(f)==codom(f) && isperm(collect(f)),
+                           collect(components(ch.l)))
 
 # """Imperative approach to this."""
 # function exec_change!(S::Sketch, J::StructACSet,

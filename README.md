@@ -1,4 +1,4 @@
-# ![Catlab.jl](docs/src/assets/logo.png) ModelEnumeration.jl
+# ![ModelEnumeration.jl](docs/src/assets/logo.png) ModelEnumeration.jl
 [![Documentation](https://github.com/kris-brown/ModelEnumeration.jl/workflows/Documentation/badge.svg)](https://kris-brown.github.io/ModelEnumeration.jl/dev/)
 ![Tests](https://github.com/kris-brown/ModelEnumeration.jl/workflows/Tests/badge.svg)
 

@@ -13,13 +13,6 @@ using CSetAutomorphisms
 using Test
 using Combinatorics
 
-"""
-Applying some changes makes other changes redundant. This detects when we
-can ignore a change
-"""
-is_no_op(ch::Change) = all(f->dom(f)==codom(f) && isperm(collect(f)),
-                             collect(components(ch.l)))
-
 
 """
 Take a mix of Additions and Merges and execute the Merges until there are
@@ -32,40 +25,33 @@ though we've already queued it up to be added.)
 function add_merge!(S::Sketch, J::SketchModel, ch::Addition)
   verbose = false
   if verbose println("\tadd_merge! addition $ch ") end
-  m, changes = propagate!(S, J, ch)
-  additions = filter(c->c isa Addition, changes)
-  merges = filter(c->c isa Merge, changes)
-  while !isempty(merges)
-    c = merge(S,J,merges)
-    merges = Merge[]
-    if is_no_op(c) println("no op!"); continue end
-    if verbose println("\t\tadd_merge! starting while loop w/ $c (remaining: $(Vector{Any}(changes))") end
-    m′, cs = propagate!(S, J, c) # do we want to do something with this morphism?
-    additions = update_changes(S,J,m′,additions) # update existing matches
-    for newc in cs
-      newc isa Addition ? push!(additions, newc) : push!(merges, newc)
-    end
+  m, m_change, a_change = propagate!(S, J, ch)
+  while !is_no_op(m_change)
+    if verbose println("\t\tadd_merge! starting while loop w/ $c (remaining: $a_change)") end
+    m′, m_change, new_a_change = propagate!(S, J, c, a_change)
+    println("propagate produced m_change $m_change new_a_change $new_a_change")
+    a_change = update_changes(S,J,m′,[a_change, new_a_change])
     m = m ⋅ m′
   end
-  if verbose println("\t add_merge! generated $(length(changes)) new changes: $changes") end
-  return m => isempty(additions) ? nothing : merge(S,J,additions)
+  if verbose println("\t add_merge! generated $a_change") end
+  return m => a_change
 end
 
 """
 Run additions until there's nothing to add or merge. I.e. go as far as you can w/o branching.
 (unknown if this will enter an infinite loop and that we have to branch)
 """
-function add!(S::Sketch, J::SketchModel, ch::Addition)
+function add!(S::Sketch, J::SketchModel, ch::Addition; force=false)
   J = deepcopy(J)
   verbose = false
   m = id(J.model)
-  while true
+  while force || !is_no_op(ch)
+    force = false
     if verbose println("starting add! with $ch") end
-    codom(ch.r) == J.model || error("unpropagated ch $ch")
     m′, ch = add_merge!(S, J, ch)
     m = m⋅m′
-    if isnothing(ch) return m => J end
   end
+  return m => J
 end
 
 """initialise a sketch model and propagate"""
@@ -76,7 +62,7 @@ function add!(S::Sketch, ch::StructACSet, freeze=Symbol[])
   J=create_premodel(S, Dict(v=>nparts(ch,v) for v in vlabel(S)), freeze)
   ch = cset_to_crel(S, ch)
   ad = Addition(S, J, homomorphism(J.model, ch; monic=true), id(J.model))
-  _, J = add!(S, J, ad)
+  _, J = add!(S, J, ad; force=true) # run it even if ad is a no op
   return J
 end
 
@@ -84,6 +70,9 @@ end
 Take a premodel and branch on a FK (favor FKs between 'frozen' objects).
 (potentially a smarter algorithm can determine where would be best to branch).
 For each branch, saturate with `add!`.
+
+We should probably bias cocone legs over cone legs (which get derived
+automatically from the data in their diagram)
 
 TODO: branching should only consider distinct *orbits* in codomain
       so we should be storing the Nauty res in the db
@@ -95,7 +84,8 @@ function branch(S::Sketch, J::SketchModel; force=nothing)::Vector{Addition}
     show(stdout, "text/plain", first(crel_to_cset(S,J.model)))
   end
   if isnothing(force)
-    score(f) = sum([src(S,f)∈J.frozen[1], tgt(S,f)∈J.frozen[1]])
+    score(f) = sum([src(S,f)∈J.frozen[1], tgt(S,f)∈J.frozen[1]]) +
+      (any(c->f ∈ last.(c.legs), S.cones) ? -0.5 : 0)
     dangling = [score(f)=>f for f in setdiff(elabel(S), J.frozen[2])]
     branch_m = last(last(sort(dangling)))
   else
@@ -155,6 +145,10 @@ function chase_db(S::Sketch, db::EnumState)
   end
 end
 
+"""
+Initialize an EnumState with a structACSet. This is the one chance to add parts
+that are frozen.
+"""
 function init_db(S::Sketch, ad::StructACSet, freeze=Symbol[])
   es = EnumState()
   J = add!(S, ad, freeze)
