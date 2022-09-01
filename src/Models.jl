@@ -99,6 +99,8 @@ Create an empty premodel (C-Rel).
 """
 function create_premodel(S::Sketch, n=Dict{Symbol, Int}(), freeze_obs=Symbol[])::SketchModel
   J = S.crel()
+  keys(n) ⊆ vlabel(S) || error("bad key(s) $(keys(n)|>collect)") # validate
+  freeze_obs ⊆ vlabel(S) || error("bad freeze obs $(freeze_obs)") # validate
   # handle one_obs
   one_obs = Set([c.apex for c in S.cones if nv(c.d)==0])
   for o in one_obs
@@ -109,13 +111,14 @@ function create_premodel(S::Sketch, n=Dict{Symbol, Int}(), freeze_obs=Symbol[]):
   # handle zero obs
   zero_obs = Set([c.apex for c in S.cocones if nv(c.d)==0]) ∪ [
     v for v in freeze_obs if get(n,v,0) == 0]
+
   change = true
   while change  # Maps into zero obs are zero obs
     change = false
     for z in zero_obs
       for h in hom_in(S, z)
-        if dom(S,h) ∉ zero_obs
-          push!(zero_obs, dom(S,h)); change = true
+        if src(S,h) ∉ zero_obs
+          push!(zero_obs, src(S,h)); change = true
         end
       end
     end
@@ -478,8 +481,10 @@ end
 Get f(x) in a premodel (return an arbitrary element that is related by f).
 Return nothing if f(x) is not yet defined.
 """
-function fk(S::Sketch, J::StructACSet, f::Symbol, x::Int)
+function fk(S::Sketch, J::StructACSet, f::Symbol, x::Int; inv=false)
   from_map, to_map = add_srctgt(f)
+  for v in filter(v->f==add_id(v), vlabel(S)) return x end
+  if inv to_map,from_map = from_map, to_map end
   fs = incident(J,x,from_map)
   if isempty(fs) return nothing end
   return J[first(fs), to_map]
@@ -736,5 +741,6 @@ function merge_eq(S::Sketch, J::StructACSet, eqclasses::Dict{Symbol, IntDisjoint
   return J #μ
 end
 
+frozen_hom(S,J,h) =  h ∈ J.frozen[2] || any(v->h==add_id(v), vlabel(S))
 
 end # module

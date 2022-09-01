@@ -1,6 +1,13 @@
 using Test
 
 
+for ex in filter(f->f[end-2:end]==".jl",readdir("data"))
+  @testset "$ex" begin
+    println("$ex")
+    include(joinpath(@__DIR__, "../data/$ex")).runtests()
+  end
+end
+
 @testset "Sketches" begin
   include("Sketches.jl")
 end
@@ -19,21 +26,4 @@ end
 
 @testset "ModEnum" begin
   include("ModEnum.jl")
-end
-
-@testset "Examples" begin
-  include(joinpath(@__DIR__, "../data/petri.jl"));
-  @test Petri.runtests()
-  include(joinpath(@__DIR__, "../data/left_inverse_involution.jl"));
-  @test LeftInvInvolution.runtests()
-  include(joinpath(@__DIR__, "../data/equalizer.jl"));
-  @test Equalizer.runtests()
-  include(joinpath(@__DIR__, "../data/coequalizer.jl"));
-  @test Coequalizer.runtests()
-  include(joinpath(@__DIR__, "../data/coproduct.jl"));
-  @test Coproduct.runtests()
-  include(joinpath(@__DIR__, "../data/surj.jl"));
-  @test Surj.runtests()
-  include(joinpath(@__DIR__, "../data/jointsurj.jl"));
-  @test JointSurj.runtests()
 end

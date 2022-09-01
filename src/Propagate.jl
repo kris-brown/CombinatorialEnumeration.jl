@@ -55,9 +55,10 @@ function propagate!(S::Sketch, J::SketchModel{Sc}, c::Change{Sc},
   update_cocones!(S,J,m,c)
 
   # update (co)cones patheqs and quotient by functionality
-  updates = vcat(set_terminal(S,J),
-  quotient_functions!(S,J,m,c), propagate_cones!(S,J,m,c),
-  propagate_cocones!(S,J,m,c), propagate_patheqs!(S,J,m,c))
+  updates = vcat(
+    set_terminal(S,J),
+    quotient_functions!(S,J,m,c), propagate_cones!(S,J,m,c),
+    propagate_cocones!(S,J,m,c), propagate_patheqs!(S,J,m,c))
   m_update = merge(S,J,Merge[u for u in updates if u isa Merge])
   a_update = merge(S,J,Addition[u for u in updates if u isa Addition])
   (m, m_update, a_update)
@@ -101,6 +102,7 @@ end
 Update homs when their src/tgt are frozen and are fully identified.
 Update (co)limit objects when their diagrams are frozen.
 TODO: do this incrementally based on change data
+TODO this assumes that each object is the apex of at most one (co)cone.
 """
 function update_frozen!(S::Sketch,J::SketchModel,m, ch::Change, queued::Addition)
   fobs, fhoms = J.frozen

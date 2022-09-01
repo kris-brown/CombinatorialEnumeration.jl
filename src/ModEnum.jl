@@ -5,7 +5,7 @@ using ..Sketches
 using ..Models
 using ..DB
 using ..Propagate
-using ..Models: eq_sets
+using ..Models: eq_sets, is_total
 
 using Catlab.CategoricalAlgebra, Catlab.Theories
 using CSetAutomorphisms
@@ -26,9 +26,10 @@ function add_merge!(S::Sketch, J::SketchModel, ch::Addition)
   verbose = false
   if verbose println("\tadd_merge! addition $ch ") end
   m, m_change, a_change = propagate!(S, J, ch)
-  while !is_no_op(m_change)
-    if verbose println("\t\tadd_merge! starting while loop w/ $c (remaining: $a_change)") end
-    m′, m_change, new_a_change = propagate!(S, J, c, a_change)
+  new_a_change = a_change
+  while !(is_no_op(m_change) || is_no_op(new_a_change)) # or any SketchModel change, really?
+    if verbose println("\t\tadd_merge! starting while loop w/ $ch (remaining: $a_change)") end
+    m′, m_change, new_a_change = propagate!(S, J, ch, a_change)
     println("propagate produced m_change $m_change new_a_change $new_a_change")
     a_change = update_changes(S,J,m′,[a_change, new_a_change])
     m = m ⋅ m′
@@ -86,7 +87,7 @@ function branch(S::Sketch, J::SketchModel; force=nothing)::Vector{Addition}
   if isnothing(force)
     score(f) = sum([src(S,f)∈J.frozen[1], tgt(S,f)∈J.frozen[1]]) +
       (any(c->f ∈ last.(c.legs), S.cones) ? -0.5 : 0)
-    dangling = [score(f)=>f for f in setdiff(elabel(S), J.frozen[2])]
+    dangling = [score(f)=>f for f in setdiff(elabel(S), J.frozen[2]) if !is_total(S,J,f)]
     branch_m = last(last(sort(dangling)))
   else
     branch_m = force ∈ J.frozen[2] ? error("cannot force $force") : force
@@ -194,9 +195,9 @@ end
 We can reason what are the models that should come out, but not which order
 they are in, so we make sure canonical hashes match up.
 """
-function test_models(db::EnumState, S::Sketch, expected)
+function test_models(db::EnumState, S::Sketch, expected; f=identity)
   Set(call_nauty(e).hsh for e in expected) == Set(
-      call_nauty(get_model(db,S,m)).hsh for m in db.models)
+      call_nauty(f(get_model(db,S,m))).hsh for m in db.models)
 end
 
 end # module

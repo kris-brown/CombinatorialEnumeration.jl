@@ -1,6 +1,10 @@
-# using Revise
+module Semigroup
+
+using Revise
 using Catlab.CategoricalAlgebra
 using ModelEnumeration
+using CSetAutomorphisms
+
 """
 Semigroups. An associative binary operation.
 https://research-repository.st-andrews.ac.uk/handle/10023/945 Table 4.1
@@ -14,7 +18,7 @@ n           | 1 | 2  | 3     | 4                 |  5
 # looked @ | 1 |  ?  | 399
 """
 
-|p1p2, p2p3, idk, kid = map(Symbol, ["π₁×π₂","π₂×π₃","id×k","k×id"])
+p1p2, p2p3, idk, kid = map(Symbol, ["π₁×π₂","π₂×π₃","id×k","k×id"])
 semig_schema = @acset LabeledGraph begin
   V = 3; E = 10; vlabel = [:s, :s2, :s3]
   elabel = [:k, :π₁, :π₂, :Π₁, :Π₂, :Π₃, p1p2, p2p3, idk, kid]
@@ -32,20 +36,20 @@ tripcone = Cone(@acset(LabeledGraph, begin V = 3; vlabel = [:s, :s, :s] end),
         :s3, [1=>:Π₁, 2=>:Π₂, 3=>:Π₃])
 
 semieqs = [
-  (:p1p2_p1, [p1p2, :π₁], [:Π₁]),
-  (:p1p2_p2, [p1p2, :π₂], [:Π₂]),
-  (:p2p3_p1, [p2p3, :π₁], [:Π₂]),
-  (:p2p3_p2, [p2p3, :π₂], [:Π₃]),
+  [[p1p2, :π₁], [:Π₁]], # p1p2_p1
+  [[p1p2, :π₂], [:Π₂]], #p1p2_p2
+  [[p2p3, :π₁], [:Π₂]], # p2p3_p1
+  [[p2p3, :π₂], [:Π₃]], #p2p3_p2
 
-  (:kid_p1, [kid, :π₁], [p1p2,:k]),
-  (:kid_p2, [kid, :π₂], [:Π₃]),
+  [[kid, :π₁], [p1p2,:k]], # kid_p1
+  [[kid, :π₂], [:Π₃]], # kid_p2
 
-  (:idk_p2, [idk, :π₂], [p2p3,:k]),
-  (:idk_p1, [idk, :π₁], [:Π₁]),
+  [[idk, :π₂], [p2p3,:k]], # idk_p2
+  [[idk, :π₁], [:Π₁]], # idk_p1
 
-  (:assoc, [idk, :k], [kid,:k]),
+  [[idk, :k], [kid,:k]], # assoc
 ]
-semig = Sketch(:semig, semig_schema, [paircone, tripcone], Cone[], semieqs);
+S = Sketch(:semig, semig_schema, cones=[paircone, tripcone], eqs=semieqs);
 
 function binfuns(i::Int)::Vector{Matrix{Int}}
   res = Matrix{Int}[]
@@ -149,18 +153,19 @@ function to_matrix(X::StructACSet)::Matrix{Int}
 end
 
 #
-S = semig;
-using CSetAutomorphisms
-
 """Naive filter strategy to get semigroups"""
 get_semis(i::Int) = [m for m in from_matrix.(binfuns(i)) if sat_eqs(S, create_premodel(S,m))]
 
-es = EnumState()
-Jinit = create_premodel(S, [:s=>2]);
-chase_set(es, S, Pair{StructACSet, Defined}[Jinit=>init_defined(S, Jinit)], 2)
-Jinit = create_premodel(S, [:s=>3]);
-chase_set(es, S, Pair{StructACSet, Defined}[Jinit=>init_defined(S, Jinit)], 3)
-Jinit = create_premodel(S, [:s=>4]);
-chase_set(es, S, Pair{StructACSet, Defined}[Jinit=>init_defined(S, Jinit)], 4)
+# function runtests()
+I = @acset S.cset begin s=2; s2=4; s3=8 end
+es = init_db(S,I)
+chase_db(S,es)
+
+# to do:
+# fix branch so that, even if there are no branchable foreign keys, we still
+# do one pass with limits/colimits to see if there is stuff to do.
 
 #ms = get_models(es, S, maxsize=3);
+#end
+
+end # module

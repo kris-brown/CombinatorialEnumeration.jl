@@ -1,4 +1,6 @@
 using Catlab.WiringDiagrams
+using ..Sketches: add_id
+using ..Models: frozen_hom
 
 # Limits
 ########
@@ -78,16 +80,9 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
   res = Change[]
   cone_ = S.cones[ci]
   ap = cone_.apex
+  idap = add_id(ap)
   J, M0 = J_.model, dom(m) # new / old model
   verbose = false
-  # Short circuit if change does not merge/add anything in the cone diagram
-  if all(v->nparts(apex(ch), v)==nparts(codom(ch.l), v),
-         unique([ap, last.(cone_.legs)...,elabel(cone_)...,vlabel(cone_)...]))
-    if verbose
-      println("short circuiting cone $ap w/ change $ch ($(components(ch.l)))")
-    end
-    return res
-  end
 
   if verbose
     println("updating cone $ap with m[apex] $(collect(m[ap]))")
@@ -100,10 +95,10 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
   for c in parts(J_.model, ap)
     pre = preimage(m[ap], c)
     if length(pre) > 1
-      for legedge in unique(last.(cone_.legs))
+      for legedge in filter(!=(idap),cone_.ulegs)
         tgttab = tgt(S, legedge)
         legvals = Set([find_root!(J_.eqs[tgttab], m[tgttab](fk(S,M0, legedge,p)))
-                       for p in pre])
+                      for p in pre])
         if length(legvals) > 1
           str = "merging leg ($ap -> $legedge -> $tgttab) vals  $legvals"
           if verbose  println(str) end
@@ -111,8 +106,8 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
         end
       end
     end
-    quot_legs = map(unique(last.(cone_.legs))) do x
-      y = fk(S,J_,x,c)
+    quot_legs = map(last.(cone_.legs)) do x
+      y = x == idap ? c : fk(S,J_,x,c)
       return isnothing(y) ? nothing : find_root!(J_.eqs[tgt(S,x)],y)
     end
     if !any(isnothing, quot_legs)
@@ -131,25 +126,36 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
 
   # UNDERESTIMATE of cones in the new model
   if nv(cone_.d) == 0
-    length(cones)==1 || error()
+    length(cones)==1 || throw(ModelException())
     return res
   end
 
   sums = Addition[]
   query_res = nv(cone_.d) == 0 ? () : query(J, cone_.uwd)
 
+  mult_legs = collect(filter(x->length(x) > 1, collect(values(cone_.leg_inds))))
+
   new_cones = Dict{Vector{Int},Union{Nothing,Int}}()
   for qres_ in unique(collect.(zip(query_res...)))
-    qres = [find_root!(J_.eqs[tgt(S,l)],y)
-            for (y,l) in zip(qres_, unique(last.(cone_.legs)))]
+    skip = false
+    qres = [find_root!(J_.eqs[tgt(S,l)], qres_[i]) for (i,l) in cone_.legs]
     if verbose println("qres_ $qres_ qres $qres") end
+
+    if any(vs->length(unique(qres_[vs])) > 1, mult_legs)
+      skip |= true
+      if all(l->frozen_hom(S,J_,l), last.(cone_.legs)) && !haskey(cones,qres)
+        throw(ModelException())
+      end
+    end
+
+    if skip continue end
     # Add a new cone if not seen before
     if !haskey(cones, qres)
       I, L = S.crel(), S.crel()
       IJd, ILd = [DefaultDict(()->Int[]) for _ in 1:2]
       add_part!(L, ap)
       lrmap = Dict{Pair{Symbol, Int}, Int}()
-      for (res_v, l) in zip(qres, unique(last.(cone_.legs)))
+      for (res_v, l) in filter(x->x[2]!=idap,collect(zip(qres, last.(cone_.legs))))
         ls, lt = add_srctgt(l)
         legtab = tgt(S,l)
         lr = legtab=>res_v

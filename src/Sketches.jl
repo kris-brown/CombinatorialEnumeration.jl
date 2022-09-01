@@ -2,7 +2,7 @@ module Sketches
 export Sketch, S0, LabeledGraph, Cone, hom_set, hom_in, hom_out,
        sketch_from_json, to_json, add_src, add_tgt, add_srctgt, dual, elabel,
        relsize, sizes, cone_leg,cone_legs, cocone_legs, cocone_leg,
-       add_cone,add_cocone, add_path, labels, vlabel, add_pathrel
+       add_cone,add_cocone, add_path, labels, vlabel, add_pathrel, add_id
 
 using Catlab.Present, Catlab.Graphs, Catlab.Theories, Catlab.CategoricalAlgebra
 using Catlab.Programs
@@ -85,13 +85,19 @@ legs - a list of pairs, where the first element selects an object in the diagram
   d::LabeledGraph
   apex::Symbol
   legs::Vector{Pair{Int, Symbol}}
+  ulegs::Vector{Symbol}
+  leg_inds::Dict{Symbol,Vector{Int}}
   is_dag::Bool
   uwd::StructACSet
   function Cone(d::LabeledGraph, apex::Symbol, legs::Vector{Pair{Int, Symbol}})
     length(Set(first.(legs))) == length(legs) || error("nonunique legs $legs")
     # check if vertex ordering is toposort. Do things differently if so?
     is_dag = all(e->src(d,e) <= tgt(d,e), edges(d))
-    return new(add_id!(d), apex, legs, is_dag, cone_query(d, legs))
+    ulegs = unique(last.(legs))
+    leg_inds = Dict(map(ulegs) do l
+      l=>findall(==(l), last.(legs))
+    end)
+    return new(add_id!(d), apex, legs, ulegs, leg_inds, is_dag, cone_query(d, legs))
   end
 end
 
@@ -476,8 +482,14 @@ are labeled by the legs of the cone.
 
 If the apex of the cone has multiple legs with the same morphism, then by
 functionality the junctions they point to must be merged, which we enforce.
+However, this assumes the model is valid. For instance, the monomorphism
+cone constraint would never detect that a morphism isn't mono if we perform
+this optimization, so perhaps we should never do this?
+
+Maybe we just use the optimized query depending on whether certain tables/fks
+are frozen.
 """
-function cone_query(d::LabeledGraph, legs)::StructACSet
+function cone_query(d::LabeledGraph, legs; optimize=false)::StructACSet
   verbose = false
   vars = [Symbol("x$i") for i in nparts(d, :V)]
   typs = ["$x(_id=x$i)" for (i, x) in enumerate(d[:vlabel])]
@@ -496,25 +508,27 @@ function cone_query(d::LabeledGraph, legs)::StructACSet
   bod = Meta.parse(join(bodstr, "\n"))
   if verbose println("ex $exstr\n ctx $ctxstr\n bod $(join(bodstr, "\n"))") end
   res = parse_relation_diagram(hed, bod)
-  if true
-  # Merge junctions which
-  μl = [minimum(findall(==(l), last.(legs))) for l in last.(legs)]
-  μj = vcat(μl, length(legs)+1 : nparts(res,:Junction))
-  μb = vcat(μl, length(legs)+1 : nparts(res,:Box))
-  μp = vcat(μl, length(legs)+1 : nparts(res,:Port))
-  for j in [:junction, :outer_junction]
-    set_subpart!(res,j,μj[res[j]])
+  if optimize
+    # Merge junctions which
+    μl = [minimum(findall(==(l), last.(legs))) for l in last.(legs)]
+    μj = vcat(μl, length(legs)+1 : nparts(res,:Junction))
+    μb = vcat(μl, length(legs)+1 : nparts(res,:Box))
+    μp = vcat(μl, length(legs)+1 : nparts(res,:Port))
+    for j in [:junction, :outer_junction]
+      set_subpart!(res,j,μj[res[j]])
+    end
+    set_subpart!(res, :box, μb[res[:box]])
+    res2 = typeof(res)()
+    # There is a bug: cannot delete from a UWD w/o an error
+    copy_parts!(res2, res;
+      Junction=[i for i in parts(res, :Junction) if i ∈ μj],
+      Box=[i for i in parts(res, :Box) if i ∈ μb],
+      Port=[i for i in parts(res, :Port) if i ∈ μp],
+      OuterPort=parts(res,:OuterPort))
+    return res2
+  else
+    return res
   end
-  set_subpart!(res, :box, μb[res[:box]])
-  res2 = typeof(res)()
-  # There is a bug: cannot delete from a UWD w/o an error
-  copy_parts!(res2, res;
-    Junction=[i for i in parts(res, :Junction) if i ∈ μj],
-    Box=[i for i in parts(res, :Box) if i ∈ μb],
-    Port=[i for i in parts(res, :Port) if i ∈ μp],
-    OuterPort=parts(res,:OuterPort))
-  end
-  return res2
 end
 
 cone_query(c::Cone) = cone_query(c.d, c.legs)

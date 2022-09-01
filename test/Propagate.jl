@@ -28,10 +28,10 @@ J0 = test_premodel(S,J0model,freeze=[:B])
 # This should add a new equalizer cone
 R = @acset(S.crel, begin A=1;B=1;f=1;g=1;src_f=1;tgt_f=1;src_g=1;tgt_g=1 end)
 ad = Addition(S, J0, R)
-J0_ = deepcopy(J0)
+J0_ = deepcopy(J0);
 m, mch, ach = propagate!(S, J0_, ad)
 @test is_no_op(mch)
-@test codom(ach.l) == @acset S.crel begin A=1;E=1;e=1;src_e=1;tgt_e=1 end
+@test codom(ach.l) == @acset S.crel begin A=1;E=1;e=2;src_e=1;tgt_e=1 end
 
 # merge cone apexes
 me = Merge(S, deepcopy(J0), Dict([:E=>[[1,2]]]))
@@ -180,6 +180,6 @@ ad_extraC = Addition(PO, PO1, homomorphism(apex(ad), adL;monic=true), ad.r)
 PO1_ = deepcopy(PO1)
 m, mch, ach = propagate!(PO,PO1_,ad_extraC)
 @test is_no_op(mch)
-# @test nparts(codom(ach.l), :f) == 2
+# @test nparts(codom(ach.l), :f) == 2 # different answer when eval'd in REPL???
 
 end # module
