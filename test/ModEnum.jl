@@ -16,7 +16,7 @@ include(joinpath(@__DIR__, "TestSketch.jl"));
 I = @acset S.cset begin A=1;B=1;I=1;a=1 end
 es = init_db(S,I, [:A,:B])
 @test length(es) == 1
-test_models(es, S, [@acset(S.cset, begin A=1;B=1;C=1;E=1;I=1;
+@test test_models(es, S, [@acset(S.cset, begin A=1;B=1;C=1;E=1;I=1;
                                          f=1;g=1;c=1;e=1;a=1;b=1 end)])
 
 # model enumeration where |A| = 1, |B| = 2
@@ -30,14 +30,14 @@ expected = [
   # or they can point to different elements
   @acset(S.cset, begin A=1;B=2;C=1;I=1;f=1;g=2;c=1;a=1;b=1 end)
 ]
-test_models(es, S, expected)
+@test test_models(es, S, expected)
 
 # model enumeration where |A| = 2, |B| = 1
 I = @acset S.cset begin A=2;B=1 end;
 es = init_db(S,I,[:A,:B]);
 @test nparts(es[1].model, :E) == 2
 chase_db(S,es);
-test_models(es, S, [@acset(S.cset, begin A=2;B=1;C=1;E=2;I=1; # both A equalized
+@test test_models(es, S, [@acset(S.cset, begin A=2;B=1;C=1;E=2;I=1; # both A equalized
                                          f=1;g=1;c=1;e=[1,2];a=1;b=1 end)])
 # model enumeration where |A| = 2, |B| = 2
 I = @acset S.cset begin A=2;B=2 end;
@@ -66,6 +66,6 @@ expected = [
   # "a" points to the element that is not equalized.
   @acset(S.cset, begin A=2;B=2;E=1;C=1;I=1;f=[2,1];g=1;c=1;a=1;b=2;e=2 end), # 5
 ]
-test_models(es, S, expected)
+@test test_models(es, S, expected)
 
 end # module

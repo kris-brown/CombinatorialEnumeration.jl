@@ -22,7 +22,6 @@ function runtests()
   I = @acset S.cset begin A=2;B=2 end
   es = init_db(S,I, [:A,:B])
   chase_db(S,es)
-  ms = [get_model(es,S,i) for i in es.models];
 
   expected =[
     # f,g both const and point to same element
@@ -38,7 +37,8 @@ function runtests()
     # f and g are swapped
     @acset(S.cset,begin A=2;B=2;f=[1,2];g=[2,1] end),
   ]
-  test_models(es, S, expected)
+  @test test_models(es, S, expected)
+  return true
 end
 
 end # module

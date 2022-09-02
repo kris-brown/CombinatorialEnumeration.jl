@@ -13,9 +13,7 @@ https://oeis.org/A027851: should be 1 5 24 188 1915
 n           | 1 | 2  | 3     | 4                 |  5
 # semi      | 1 | 8  | 113   | ?                 |  183 732 | 17 061 118
 # semi (iso)| 1 | 5  | 24    | 184               |  1915    |
-# cset      | 1 | 16 | 19683 | 4294967296        |
-
-# looked @ | 1 |  ?  | 399
+# seen      | 1 | 12 |
 """
 
 p1p2, p2p3, idk, kid = map(Symbol, ["π₁×π₂","π₂×π₃","id×k","k×id"])
@@ -100,7 +98,7 @@ function from_matrix(m::Matrix{Int64})::StructACSet
     push!(kid_, p1p2d[(k[p1p2d[(a,b)]], c)])
   end
   n2, n3 = length(m), n^3
-  I = semig.cset()
+  I = S.cset()
   add_parts!(I, :s, n)
   add_parts!(I, :s2, n2; π₁=first.(p1_p2), π₂=last.(p1_p2), k=k)
   add_parts!(I, :s3, n3; Π₁=p1,Π₂=p2, Π₃=p3,
@@ -154,16 +152,18 @@ end
 
 #
 """Naive filter strategy to get semigroups"""
-get_semis(i::Int) = [m for m in from_matrix.(binfuns(i)) if sat_eqs(S, create_premodel(S,m))]
+get_semis(i::Int) = collect(Set(values(Dict(map(from_matrix.(binfuns(i))) do m
+  call_nauty(m).hsh => m
+end))))
 
 # function runtests()
-I = @acset S.cset begin s=2; s2=4; s3=8 end
-es = init_db(S,I)
+using ModelEnumeration.ModEnum: chase_db_step!
+I = @acset S.cset begin s=2 end;
+es = init_db(S,I, [:s]);
 chase_db(S,es)
+@test test_models(es,S,get_semis(2))
+#
 
-# to do:
-# fix branch so that, even if there are no branchable foreign keys, we still
-# do one pass with limits/colimits to see if there is stuff to do.
 
 #ms = get_models(es, S, maxsize=3);
 #end

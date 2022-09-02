@@ -128,7 +128,9 @@ function propagate_cocone!(S::Sketch, J::SketchModel,f::CSetTransformation, ci::
   if verbose println("cc_to_ap $cc_to_ap\nap_to_cc $ap_to_cc") end
   # 1.) check for apex elements that should be merged
   for vs in collect.(filter(x->length(x)>1, collect(values(cc_to_ap))))
-    if cc.apex ∈ J.frozen[1] throw(ModelException()) end
+    if cc.apex ∈ J.frozen[1]
+      throw(ModelException("$(cc.apex)#$vs must be merged, but it is frozen"))
+    end
     if verbose println("MERGING COCONE APEX ELEMS $vs") end
     push!(res, Merge(S,J,Dict(cc.apex=>[vs])))
   end
@@ -136,7 +138,9 @@ function propagate_cocone!(S::Sketch, J::SketchModel,f::CSetTransformation, ci::
   if frozen_diag && cc.apex ∉ J.frozen[1]
     for cc_root in unique(find_root!(ccdata, i) for i in 1:length(ccdata))
       if !haskey(cc_to_ap, cc_root)
-        if cc.apex ∈ J.frozen[1] throw(ModelException()) end
+        if cc.apex ∈ J.frozen[1]
+          throw(ModelException("Diagram completely determined but connected component $cc_root not matched to apex"))
+        end
         if verbose println("New cc_root that is unmatched $cc_root") end
         newL, newI = S.crel(), S.crel()
         ipartdict = Dict()
@@ -185,7 +189,7 @@ function propagate_cocone!(S::Sketch, J::SketchModel,f::CSetTransformation, ci::
     if verbose println("mn $mn -- parts $(nparts(J.model, cc.apex)) -- mx $mx\n")
     end
     if !(mn <= nparts(J.model, cc.apex) <= mx)
-      throw(ModelException())
+      throw(ModelException("mn $mn <= #$(cc.apex) $(nparts(J.model, cc.apex)) <= mx $mx"))
     end
   end
 
@@ -200,7 +204,7 @@ function propagate_cocone!(S::Sketch, J::SketchModel,f::CSetTransformation, ci::
     # TODO revisit this assumption, maybe something can still be inferred?
     if vlabel(cc) ⊆ J.frozen[1]
       if !connection_possible(S, startJ, cc, ccdata, cd, vs)
-        throw(ModelException())
+        throw(ModelException("Connected components cannot possibly be merged"))
       end
     end
   end

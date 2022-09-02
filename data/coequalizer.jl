@@ -30,7 +30,8 @@ function runtests()
     # f and g are swapped
     @acset(S.cset,begin A=2;B=2;C=1;f=[1,2];g=[2,1];c=1 end),
   ]
-  test_models(es, S, expected)
+  @test test_models(es, S, expected)
+  return true
 end
 
 end # module

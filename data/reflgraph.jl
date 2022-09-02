@@ -28,7 +28,7 @@ function runtests()
         @acset(S.cset, begin V=2;E=3;refl=[1,2];src=[1,2,1];tgt=[1,2,1] end),
         @acset(S.cset, begin V=2;E=3;refl=[1,2];src=[1,2,1];tgt=[1,2,2] end),
     ]
-    test_models(es, S, expected)
+    @test test_models(es, S, expected)
 
     I = @acset S.cset begin V=2; E=1 end
     @test_throws(ModelException,init_db(S,I, [:V,:E]))

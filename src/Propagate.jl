@@ -38,11 +38,13 @@ that need to be made.
 
 We may be propagating a change while there is already an addition queued.
 """
-function propagate!(S::Sketch, J::SketchModel{Sc}, c::Change{Sc},
-                    queued=nothing) where Sc
+function propagate!(S::Sketch, J::SketchModel{Sc}, c::Change{Sc};
+                    queued=nothing, freeze_after=[]) where Sc
   if isnothing(queued) queued = Addition(S,J) end
   m = exec_change(S, J.model, c)
+  J.frozen = union(J.frozen[1], freeze_after) => J.frozen[2]
   verbose = false
+
   # update model
   J.model = codom(m)
   # show(stdout, "text/plain", J.model)

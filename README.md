@@ -21,7 +21,7 @@ Even if each individual piece of data or constraint in this definition is straig
 There is pedagogical value in working through these types of problems in one's head, but there is also value in having these answers automatically ready at hand when trying to think about / build intuition for more complicated concepts. There is something mechanical about this process, and the purpose of this repo is to mechanize precisely that in an efficient way that's also usable for people trying to build their intuitions.
 
 
-## Notes
+## Notes on categories of sketch models
 From "Toposes, Triples and Theories" (Barr and Wells)
 
 - Theorem 4.3: Every FP-theory has an extension to an LE-theory which has the
@@ -31,11 +31,3 @@ category of set-valued models of a left exact theory has arbitrary limits and
 all filtered colimits; moreover, these are preserved by the set-valued functors
 of evaluation at the objects of the theory.
 - Theorem 4.1: (outlines which kinds of sketches have which kinds of (co)limits)
-
-## Wishlist
-- [x] Generate models of a theory by a variant of [the chase](https://en.wikipedia.org/wiki/Chase_(algorithm)) that deliberately produces models that are not initial.
-- [ ] Test properties of the various theories in the `data/sketches/` directory
-- [ ] Automatically convert the `EqTheories` (intuitively declarable through wiring diagrams from the `@program` macro, see `src/old/ATP/WD.jl`) into the finite limit theories of `src/Sketch.jl`.
-- [ ] Use `@threads` to parallelize many parallelizable aspects of the code.
-- [ ] Apply known relationships between theories to reduce the computational burden. I.e. models of theory `T` that is just theory `V` with extra constraints can be found by filtering `V` models (if they were already computed). If theory `T` is the pushout of smaller theories `A` and `B`, then solve for the small models and take the join (in the SQL sense, joining on overlapping variables) of the two sets of models.
-- [ ] Friendly text-based API

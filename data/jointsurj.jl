@@ -1,6 +1,7 @@
 module JointSurj
 
 # using Revise
+using Test
 using Catlab.CategoricalAlgebra
 using ModelEnumeration
 
@@ -58,13 +59,14 @@ function runtests()
       p1=[1,1,1,2,2,2,3,3,3,4];p2=[1,2,3,1,2,3,1,2,3,4] end),
   ]
 
-  test_models(es, S, expected)
+  @test test_models(es, S, expected)
 
   # we can also, knowing what A and B are, freeze A+B.
   I = @acset S.cset begin A=2;B=2;C=2;A_B=4 end
   es = init_db(S,I, [:A,:B,:C,:A_B])
   chase_db(S,es)
-  test_models(es, S, expected)
+
+  @test test_models(es, S, expected)
   return true
 end
 

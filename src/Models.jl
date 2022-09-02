@@ -52,7 +52,10 @@ function epi_mono(f)
 end
 #######
 
-struct ModelException <: Exception end
+struct ModelException <: Exception
+  msg::String
+  ModelException(msg::String="") = new(msg)
+end
 
 # There is an list element for each element in the root table
 # Those elements each are of length n, for the n objects in the path_eq diagram
@@ -134,7 +137,7 @@ function create_premodel(S::Sketch, n=Dict{Symbol, Int}(), freeze_obs=Symbol[]):
 
   lim_obs = Set([c.apex for c in vcat(S.cones,S.cocones)])
   freeze_obs = Set(freeze_obs ∪ one_obs ∪ zero_obs)
-  freeze_arrs = Set{Symbol}(hom_out(S,collect(zero_obs)))
+  freeze_arrs = Set{Symbol}([hom_out(S,collect(zero_obs))...,add_id.(vlabel(S))...])
 
   eqs = Dict([o=>IntDisjointSets(nparts(J, o)) for o in vlabel(S)])
   cocones = Vector{Pair{IntDisjointSets{Int}, Vector{Tuple{Symbol,Int,Int}}}}(
@@ -270,7 +273,7 @@ struct Addition{S} <: Change{S}
     dom(l)==dom(r) || error("addition must be a span")
     codom(r) == J.model || error("addition doesn't match")
 
-    map(collect(union(J.frozen...))) do s
+    map(collect(union(J.frozen...) ∩ (vlabel(S)∪elabel(S)))) do s
       nd, ncd = nparts(dom(l), s), nparts(codom(l),s)
       nd <= ncd || error("cannot add $s (frozen): $nd -> $ncd")
     end
@@ -341,7 +344,7 @@ struct Merge{S} <: Change{S}
       if nparts(I,v) == 1 error(I) end
     end
 
-    map(collect(union(J.frozen...))) do s
+    map(collect(union(J.frozen...)∩(vlabel(S)∪elabel(S)))) do s
       nd, ncd = nparts(dom(ir), s), nparts(codom(ir),s)
       nd == ncd || error("cannot merge/add $s (frozen): $nd -> $ncd")
     end

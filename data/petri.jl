@@ -54,7 +54,7 @@ function runtests()
   es = init_db(S,I,[:S,:T,:I,:O]);
   chase_db(S,es)
   expected = all_petri(2)
-  test_models(es, S, expected)
+  @test test_models(es, S, expected)
   return true
 end
 

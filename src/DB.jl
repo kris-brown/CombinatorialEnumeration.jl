@@ -6,7 +6,10 @@ export init_db, get_premodel, add_model,
 """
 Interact an in-memory datastore
 
-We can also support a postgres backend when the scale is beyond computer memory
+We formerly supported a postgres backend when the scale is beyond computer
+memory (or we want to serialize results to be used much later).
+
+This could be reimplemented if needed.
 """
 
 using ..Sketches
@@ -21,6 +24,16 @@ using DataStructures
 abstract type DBLike end
 
 # DB alternative: local memory
+"""
+premodels - partially filled out models, seen so far, indexed by their hash
+pk - vector of hash values for each model seen so far
+models - subset of premodels which are complete
+sizes - size of each premodel
+fired - subset of premodels which have been branched on already
+branch - relation showing which premodel branched into which other premodel
+to_branch - propagating constraints gives us something to branch on that's
+            better than the generic 'pick a FK undefined for a particular input'
+"""
 mutable struct EnumState <: DBLike
   premodels::Dict{String, SketchModel}
   pk::Vector{String}
@@ -28,12 +41,13 @@ mutable struct EnumState <: DBLike
   sizes::Vector{Int}
   fired::Set{Int}
   branch::DefaultDict{Int, Vector{Pair{Int, String}}}
+  to_branch::Vector{Any}
   function EnumState()
     return new(
       Dict{String, SketchModel}(),String[],
       Set{Int}(),Int[], Set{Int}(),
       DefaultDict{Int, Vector{Pair{Int, String}}}(
-        ()->Pair{Int, String}[]))
+        ()->Pair{Int, String}[]),[])
   end
 end
 

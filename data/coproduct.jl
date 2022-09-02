@@ -1,5 +1,6 @@
 module Coproduct
 
+using Test
 using Catlab.CategoricalAlgebra
 using ModelEnumeration
 
@@ -22,12 +23,12 @@ function runtests()
   I = @acset S.cset begin A=3 end
   es = init_db(S,I, [:A])
   expected = @acset S.cset begin A=3;A_A=6; iA=[1,2,3];iB=[4,5,6] end
-  is_isomorphic(get_model(es,S,only(es.models)), expected)
+  @test is_isomorphic(get_model(es,S,only(es.models)), expected)
 
   I = @acset S.cset begin A=3; A_A=6 end
   es = init_db(S,I, [:A,:A_A])
   chase_db(S,es)
-  is_isomorphic(get_model(es,S,only(es.models)), expected)
+  @test is_isomorphic(get_model(es,S,only(es.models)), expected)
 end
 
 end # module

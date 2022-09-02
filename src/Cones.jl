@@ -71,9 +71,12 @@ If we add *diagram* elements, new cones apex elements may be induced.
 Unfortunately we do not use the fact we know the incremental change between
 models to do this more intelligently.
 
-Things to think about:
-- is it better to put all the generate cones in one big Addition or to break it
-  up into smaller Additions?
+If the apex and diagram objects/maps are frozen but not the legs, our query
+results should match up one-to-one with apex elements. However, we may not know
+how they should be matched, so the cone can actually generate a list of
+possibilities to branch on (in addition to changes that must be executed).
+- This isn't yet supported and will fail.
+
 """
 function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
                          ci::Int, ch::Change)
@@ -88,6 +91,11 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
     println("updating cone $ap with m[apex] $(collect(m[ap]))")
     show(stdout,"text/plain", J)
     println(J_.eqs)
+  end
+
+  if (vlabel(cone_) ∪ [ap]) ⊆ J_.frozen[1] && elabel(cone_) ⊆ J_.frozen[2] && last.(cone_.legs) ⊈ J_.frozen[2]
+    msg = "Frozen $(J_.frozen) apex $ap vs $(vlabel(cone_)) es $(elabel(cone_))"
+    error("Cones w/ frozen apex + diagram but unfrozen legs unsupported\n$msg")
   end
 
   # Merged cone elements induced merged values along their legs
@@ -126,7 +134,7 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
 
   # UNDERESTIMATE of cones in the new model
   if nv(cone_.d) == 0
-    length(cones)==1 || throw(ModelException())
+    length(cones)==1 || throw(ModelException("Wrong number of 1 objects"))
     return res
   end
 
@@ -141,10 +149,12 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
     qres = [find_root!(J_.eqs[tgt(S,l)], qres_[i]) for (i,l) in cone_.legs]
     if verbose println("qres_ $qres_ qres $qres") end
 
-    if any(vs->length(unique(qres_[vs])) > 1, mult_legs)
+    mult_leg_viol = [vs for vs in mult_legs if length(unique(qres_[vs])) > 1]
+    if !isempty(mult_leg_viol)
       skip |= true
       if all(l->frozen_hom(S,J_,l), last.(cone_.legs)) && !haskey(cones,qres)
-        throw(ModelException())
+        ls = last.([first(cone_.legs[vs]) for vs in mult_leg_viol])
+        throw(ModelException("Identical legs $ls should point to same element: qres_ $qres_"))
       end
     end
 

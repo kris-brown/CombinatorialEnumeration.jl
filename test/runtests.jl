@@ -1,13 +1,5 @@
 using Test
 
-
-for ex in filter(f->f[end-2:end]==".jl",readdir("data"))
-  @testset "$ex" begin
-    println("$ex")
-    include(joinpath(@__DIR__, "../data/$ex")).runtests()
-  end
-end
-
 @testset "Sketches" begin
   include("Sketches.jl")
 end
@@ -26,4 +18,11 @@ end
 
 @testset "ModEnum" begin
   include("ModEnum.jl")
+end
+
+for ex in filter(f->f[end-2:end]==".jl",readdir("data"))
+  @testset "$ex" begin
+    println("$ex")
+    include(joinpath(@__DIR__, "../data/$ex")).runtests()
+  end
 end

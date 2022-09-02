@@ -3,6 +3,7 @@ module JointSurj
 # using Revise
 using Catlab.CategoricalAlgebra
 using ModelEnumeration
+using Test
 
 """
 Permutations of a set, i.e. invertible endo-functions.
@@ -29,7 +30,7 @@ function runtests()
         @acset(S.cset, begin X=3;f=[2,3,1];f⁻¹=[3,1,2] end),
     ]
 
-    test_models(es, S, expected)
+    @test test_models(es, S, expected)
 
     return true
 end

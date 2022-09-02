@@ -77,7 +77,7 @@ function quotient_functions!(S::Sketch, J_::SketchModel, h::CSetTransformation,
         t_eqcs = Set([find_root!(J_.eqs[tgtobj], t) for t in J[rel, dtgt]])
         if length(t_eqcs) > 1
           if verbose println("isrc $i_src t_eqcs $t_eqcs") end
-          if tgtobj ∈ J_.frozen[1] throw(ModelException()) end
+          if tgtobj ∈ J_.frozen[1] throw(ModelException("Functionality imposs")) end
           push!(res, Merge(S, J_, Dict([tgtobj=>[collect(t_eqcs)]])))
         end
       end

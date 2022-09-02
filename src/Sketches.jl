@@ -101,6 +101,8 @@ legs - a list of pairs, where the first element selects an object in the diagram
   end
 end
 
+Cone(s::Symbol) = Cone(LabeledGraph(), s, Pair{Int,Symbol}[])
+
 legs(c::Cone) = c.legs
 vlabel(C::Cone) = vlabel(C.d)
 elabel(C::Cone) = elabel(C.d)

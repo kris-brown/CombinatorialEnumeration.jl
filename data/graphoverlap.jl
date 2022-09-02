@@ -1,7 +1,9 @@
 module GraphOverlap
 
 # using Revise
+using Test
 using Catlab.CategoricalAlgebra, Catlab.Graphics, Catlab.Present, Catlab.Graphs
+using Catlab.Graphics
 using ModelEnumeration
 using ModelEnumeration.Models: is_surjective
 using DataStructures
@@ -94,6 +96,10 @@ eqs = vcat(ve_eqs, hom_eqs)
 
 S = Sketch(:Overlap, schema, cones=[cs...,injs...], cocones=[ccs...,a_bs...], eqs=eqs)
 
+# Example of 3 path equations starting from E₁
+to_graphviz(S.eqs[:E₁]; node_labels=:vlabel, edge_labels=:elabel)
+
+
 function init_graphs(g1::Graph, g2::Graph,vg3=0,eg3=0)
   @acset S.cset begin V₁=nv(g1); V₂=nv(g2);E₁=ne(g1);E₂=ne(g2);V₃=vg3;E₃=eg3
                       s₁=g1[:src];t₁=g1[:tgt];s₂=g2[:src];t₂=g2[:tgt] end
@@ -126,11 +132,13 @@ parse_result(X::StructACSet,Y::StructACSet{S}) where S = begin
   copy_parts!(Y,X,ob(S)); return Y end
 parse_result(X::StructACSet) = parse_result(X,R())
 
+
 function runtests()
   pg = path_graph(Graph,2)
   I = init_graphs(pg,pg)
   es = init_db(S,I, [:V₁, :V₂, :E₁,:E₂])
-  chase_db(S,es)
+  chase_db(S,es);
+
 
   expected = [
     # arrows pointing opposite between same vertices
@@ -157,8 +165,8 @@ function runtests()
     # overlap a2 b2
     @acset(R, begin V₁=2;V₂=2;E₁=1;E₂=1;s₁=1;t₁=2;s₂=1;t₂=2
     V₃=3;E₃=2;s₃=[1,3];t₃=2; fᵥ=[1,2];gᵥ=[3,2];fₑ=1;gₑ=2 end),
-  ]
-  test_models(es, S, expected; f=parse_result)
+  ];
+  @test test_models(es, S, expected; f=parse_result)
 
   return true
 end
