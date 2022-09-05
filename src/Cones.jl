@@ -11,10 +11,10 @@ function propagate_cones!(S::Sketch, J::SketchModel, f::CSetTransformation, ch::
   res = Change[]
   for (i,c) in enumerate(S.cones)
     legcond = any(l->!is_surjective(f[l]), vcat(elabel(c),vlabel(c)))
-    if legcond || !([c.apex,vlabel(c)...]⊆J.frozen[1] && ((last.(c.legs) ∪ elabel(c)) ⊆ J.frozen[2]))
+    if legcond || !([c.apex,vlabel(c)...] ⊆ J.aux.frozen[1] && ((last.(c.legs) ∪ elabel(c)) ⊆ J.aux.frozen[2]))
       append!(res, propagate_cone!(S, J, f, i, ch))
     else
-      if verbose println("skipping cone $i w/ frozen $(J.frozen)") end
+      if verbose println("skipping cone $i w/ frozen $(J.aux.frozen)") end
     end
   end
   res
@@ -90,10 +90,10 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
   if verbose
     println("updating cone $ap with m[apex] $(collect(m[ap]))")
     show(stdout,"text/plain", J)
-    println(J_.eqs)
+    println(J_.aux.eqs)
   end
 
-  if (vlabel(cone_) ∪ [ap]) ⊆ J_.frozen[1] && elabel(cone_) ⊆ J_.frozen[2] && last.(cone_.legs) ⊈ J_.frozen[2]
+  if (vlabel(cone_) ∪ [ap]) ⊆ J_.aux.frozen[1] && elabel(cone_) ⊆ J_.aux.frozen[2] && last.(cone_.legs) ⊈ J_.aux.frozen[2]
     msg = "Frozen $(J_.frozen) apex $ap vs $(vlabel(cone_)) es $(elabel(cone_))"
     error("Cones w/ frozen apex + diagram but unfrozen legs unsupported\n$msg")
   end
@@ -105,7 +105,7 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
     if length(pre) > 1
       for legedge in filter(!=(idap),cone_.ulegs)
         tgttab = tgt(S, legedge)
-        legvals = Set([find_root!(J_.eqs[tgttab], m[tgttab](fk(S,M0, legedge,p)))
+        legvals = Set([find_root!(J_.aux.eqs[tgttab], m[tgttab](fk(S,M0, legedge,p)))
                       for p in pre])
         if length(legvals) > 1
           str = "merging leg ($ap -> $legedge -> $tgttab) vals  $legvals"
@@ -116,7 +116,7 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
     end
     quot_legs = map(last.(cone_.legs)) do x
       y = x == idap ? c : fk(S,J_,x,c)
-      return isnothing(y) ? nothing : find_root!(J_.eqs[tgt(S,x)],y)
+      return isnothing(y) ? nothing : find_root!(J_.aux.eqs[tgt(S,x)],y)
     end
     if !any(isnothing, quot_legs)
       push!(cones[quot_legs], c)
@@ -125,7 +125,7 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
 
   # Merged leg values induced merged cone elements
   for quot_cones in filter(x->length(x)>1, collect(values(cones)))
-    eqcs = collect(Set([find_root!(J_.eqs[ap],x) for x in quot_cones]))
+    eqcs = collect(Set([find_root!(J_.aux.eqs[ap],x) for x in quot_cones]))
     if length(eqcs) > 1
       if verbose println("Merging cone apexes $eqcs") end
       push!(res, Merge(S,J_, Dict([ap=>[eqcs]])))
@@ -146,7 +146,7 @@ function propagate_cone!(S::Sketch, J_::SketchModel, m::CSetTransformation,
   new_cones = Dict{Vector{Int},Union{Nothing,Int}}()
   for qres_ in unique(collect.(zip(query_res...)))
     skip = false
-    qres = [find_root!(J_.eqs[tgt(S,l)], qres_[i]) for (i,l) in cone_.legs]
+    qres = [find_root!(J_.aux.eqs[tgt(S,l)], qres_[i]) for (i,l) in cone_.legs]
     if verbose println("qres_ $qres_ qres $qres") end
 
     mult_leg_viol = [vs for vs in mult_legs if length(unique(qres_[vs])) > 1]

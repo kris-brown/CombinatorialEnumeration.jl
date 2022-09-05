@@ -1,7 +1,7 @@
 module DB
-export init_db, get_premodel, add_model,
-       add_premodel, add_sketch, get_model, get_models, get_model_ids, set_failed,
-       add_branch, EnumState, DBLike, start_premodel, set_fired, EnumState
+export init_db, init_premodel, add_premodel, get_model, EnumState, Prop,
+       MergeEdge,AddEdge, Init, Branch
+import ..Sketches: show_lg
 
 """
 Interact an in-memory datastore
@@ -21,96 +21,114 @@ using DataStructures
 
 
 #############################
-abstract type DBLike end
+
+abstract type EdgeChange end
+"""
+No change is done to the input: these are just the additional changes that were
+discovered while propagating an add/merge change
+"""
+struct MergeEdge  <: EdgeChange
+  merge::Merge
+  queued::Addition
+  m::ACSetTransformation
+end
+struct AddEdge  <: EdgeChange
+  add::Addition
+  m::ACSetTransformation
+end
+struct Branch  <: EdgeChange
+  add::Addition
+  m::ACSetTransformation
+end
+struct Init <: EdgeChange
+  add::Addition
+  m::ACSetTransformation
+end
+
+
+to_symbol(::Init) = :I
+to_symbol(::AddEdge) = :A
+to_symbol(::MergeEdge) = :M
+to_symbol(::Branch) = :B
+
+
 
 # DB alternative: local memory
 """
+grph - relation between models. Edges are either branch, add, or merge
 premodels - partially filled out models, seen so far, indexed by their hash
 pk - vector of hash values for each model seen so far
-models - subset of premodels which are complete
-sizes - size of each premodel
-fired - subset of premodels which have been branched on already
-branch - relation showing which premodel branched into which other premodel
-to_branch - propagating constraints gives us something to branch on that's
+prop - vector of data that is generated from propagating constraints on a premodel
+ms - a morphism for each edge
+fail - subset of premodels which fail
+models - subset of premodels which are complete. This can be less efficiently
+         computed on the fly as models which
+(to be used in the future)
+fired - subset of *edges* which have been processed
+to_branch - propagating constraints may give us something to branch on that's
             better than the generic 'pick a FK undefined for a particular input'
 """
-mutable struct EnumState <: DBLike
-  premodels::Dict{String, SketchModel}
+mutable struct EnumState
+  grph::LabeledGraph
+  premodels::Vector{SketchModel}
+  ms::Vector{EdgeChange}
   pk::Vector{String}
+  fail::Set{Int}
   models::Set{Int}
-  sizes::Vector{Int}
-  fired::Set{Int}
-  branch::DefaultDict{Int, Vector{Pair{Int, String}}}
-  to_branch::Vector{Any}
+  prop::Vector{Union{Nothing,Tuple{AuxData, Addition, Merge}}}
+  # to_branch::Vector{Any}
   function EnumState()
-    return new(
-      Dict{String, SketchModel}(),String[],
-      Set{Int}(),Int[], Set{Int}(),
-      DefaultDict{Int, Vector{Pair{Int, String}}}(
-        ()->Pair{Int, String}[]),[])
+    return new(LabeledGraph(),SketchModel[], EdgeChange[], String[],
+               Set{Int}(), Set{Int}(), Any[])
   end
 end
 
+show_lg(es::EnumState) = show_lg(es.grph)
 Base.length(es::EnumState) = length(es.premodels)
-Base.getindex(es::EnumState, i::Int) = es.premodels[es.pk[i]]
+Base.getindex(es::EnumState, i::Int) = es.premodels[i]
+Base.getindex(es::EnumState, i::String) = es.premodels[findfirst(==(i), es.pk)]
 
 function add_premodel(es::EnumState, S::Sketch, J::SketchModel;
-                      parent::Union{Int, Nothing}=nothing,
-                      chash::Union{String, Nothing}=nothing)::Int
-  chash = isnothing(chash) ? call_nauty(J.model).hsh : chash
+                      parent::Union{Nothing,Pair{Int,E}}=nothing)::Int where {E <: EdgeChange}
 
+  naut = call_nauty(J.model)
 
-  if haskey(es.premodels, chash)
-    return findfirst(==(chash), es.pk)
+  found = findfirst(==(naut.hsh), es.pk)
+  if !isnothing(found)
+    new_v = found
+  else
+    push!(es.premodels, J)
+    push!(es.prop, nothing)
+    push!(es.pk, naut.hsh)
+    new_v = add_part!(es.grph, :V; vlabel=Symbol(string(length(es.pk))))
   end
-
-
-  push!(es.pk, chash)
-  es.premodels[chash] = J
 
   if !isnothing(parent)
-    push!(es.branch[parent], length(es.pk)=>"")
+    p_i, p_e = parent
+    add_part!(es.grph, :E; src=p_i, tgt=new_v, elabel=to_symbol(p_e))
+    push!(es.ms, p_e)
   end
 
-  push!(es.sizes, sum([nparts(J.model, v) for v in vlabel(S)]))
-  return length(es.pk)
+  return new_v
 end
 
-function get_premodel_id(es::EnumState, crel::SketchModel,
-  crel_pres::Presentation)::Union{Nothing, Int}
-  hsh = call_nauty(crel.model).hsh
-  return findfirst(==(hsh), es.pk)
-end
+init_premodel(S::Sketch, ch::StructACSet, freeze=Symbol[]) = init_premodel(EnumState(), S, ch, freeze)
 
-function set_fired(es::EnumState, m::Int)
-  es.fired[m] = m
-end
-
-function get_model_ids(es::EnumState, S::Sketch; maxsize::Int=0)::Vector{Int}
-    is = [i for (i, s) in enumerate(es.sizes) if maxsize == 0 || s < maxsize]
-    return collect(is ∩ es.models)
+function init_premodel(es::EnumState, S::Sketch, ch::StructACSet, freeze=Symbol[])
+  for o in [c.apex for c in S.cones if nv(c.d)==0 && nparts(ch, c.apex) == 0]
+    add_part!(ch, o)
+  end
+  J = create_premodel(S, Dict(), freeze)
+  i = add_premodel(es, S, J)
+  ch = cset_to_crel(S, ch)
+  ad = Addition(S, J, homomorphism(J.model,ch;monic=true), id(J.model))
+  m = exec_change(S, J.model, ad)
+  J.model = codom(m)
+  J.aux.frozen = (J.aux.frozen[1] ∪ freeze) => J.aux.frozen[2]
+  add_premodel(es, S, J; parent=i=>Init(ad,m))
+  return es
 end
 
 get_model(es::EnumState, S::Sketch, i::Int)::StructACSet = first(crel_to_cset(S, es[i]))
-
-
-get_premodel(es::EnumState, S::Sketch, i::Int) = es.premodels[es.pk[i]]
-
-function add_branch(es::EnumState, S::Sketch, choice::String,
-                    chased_premodel_id::Int, chosen_premodel::StructACSet)::Int
-  new_id = add_premodel(es, S, chosen_premodel, d)
-  push!(es.branch[chased_premodel_id], new_id=>choice)
-  return new_id
-end
-
-
-function add_model(es::EnumState, S::Sketch, J::SketchModel;
-                   parent::Union{Nothing,Int}=nothing,
-                   relm_hsh::Union{String, Nothing}=nothing)::Int
-  !last(crel_to_cset(S, J.model)) || error("adding a partial model")
-  pid = add_premodel(es, S, J; parent=parent, chash=relm_hsh)
-  push!(es.models, pid)
-  return pid
-end
 
 end  # module

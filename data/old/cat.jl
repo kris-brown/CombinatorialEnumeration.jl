@@ -3,7 +3,7 @@ module Cat
 using Revise
 using Test
 using Catlab.CategoricalAlgebra
-using ModelEnumeration
+using CombinatorialEnumeration
 
 """Theory of categories
 
@@ -104,9 +104,13 @@ cateqs = [
 S = Sketch(:catt, catschema, cones=catcones,  eqs=cateqs);
 
 # function runtests()
+using CombinatorialEnumeration.ModEnum: chase_db_step!
 I = @acset S.cset begin O=1; A=2 end
-es = init_db(S,I, [:O,:A])
-chase_db(S,es)
+es = init_premodel(S,I, [:O,:A])
+chase_db_step!(S,es,1)
+
+
+# chase_db(S,es) # doesn't work well TODO
 
 # end
 

@@ -2,10 +2,9 @@ module TestModEnum
 
 # using Revise
 using Test
-using ModelEnumeration
-using CSetAutomorphisms
+using CombinatorialEnumeration
 
-using ModelEnumeration.ModEnum: combos_below, chase_db_step!
+using CombinatorialEnumeration.ModEnum: combos_below
 
 include(joinpath(@__DIR__, "TestSketch.jl"));
 
@@ -14,16 +13,16 @@ include(joinpath(@__DIR__, "TestSketch.jl"));
 
 # model enumeration where |A| = |B| = 1
 I = @acset S.cset begin A=1;B=1;I=1;a=1 end
-es = init_db(S,I, [:A,:B])
-@test length(es) == 1
-@test test_models(es, S, [@acset(S.cset, begin A=1;B=1;C=1;E=1;I=1;
-                                         f=1;g=1;c=1;e=1;a=1;b=1 end)])
+es = init_premodel(S,I, [:A,:B]);
+chase_db(S, es)
+term = @acset(S.cset, begin A=1;B=1;C=1;E=1;I=1;f=1;g=1;c=1;e=1;a=1;b=1 end)
+@test test_models(es, S, [term])
 
 # model enumeration where |A| = 1, |B| = 2
 I = @acset S.cset begin A=1;B=2;I=1;a=1 end;
-es = init_db(S,I, [:A,:B]);
-@test nparts(es[1].model,:b) == 0
+es = init_premodel(S,I, [:A,:B]);
 chase_db(S,es);
+
 expected = [
   # the f&g can point to the same element
   @acset(S.cset, begin A=1;B=2;E=1;C=2;I=1;f=1;g=1;c=[1,2];a=1;b=1;e=1 end),
@@ -34,14 +33,14 @@ expected = [
 
 # model enumeration where |A| = 2, |B| = 1
 I = @acset S.cset begin A=2;B=1 end;
-es = init_db(S,I,[:A,:B]);
-@test nparts(es[1].model, :E) == 2
+es = init_premodel(S,I, [:A,:B]);
 chase_db(S,es);
 @test test_models(es, S, [@acset(S.cset, begin A=2;B=1;C=1;E=2;I=1; # both A equalized
                                          f=1;g=1;c=1;e=[1,2];a=1;b=1 end)])
 # model enumeration where |A| = 2, |B| = 2
 I = @acset S.cset begin A=2;B=2 end;
-es = init_db(S,I, [:A,:B]);
+es = init_premodel(S,I, [:A,:B]);
+
 chase_db(S,es)
 expected = [
   # f&g are both id
@@ -67,5 +66,12 @@ expected = [
   @acset(S.cset, begin A=2;B=2;E=1;C=1;I=1;f=[2,1];g=1;c=1;a=1;b=2;e=2 end), # 5
 ]
 @test test_models(es, S, expected)
+
+# Merge via functionality
+I = deepcopy(term)
+add_part!(I, :E; e=1)
+es = init_premodel(S,I, [:A,:B]);
+chase_db(S,es);
+@test test_models(es, S, [term])
 
 end # module

@@ -2,7 +2,7 @@ module TestSketches
 
 # using Revise
 using Test
-using ModelEnumeration
+using CombinatorialEnumeration
 using Catlab.CategoricalAlgebra
 
 include(joinpath(@__DIR__, "TestSketch.jl"));

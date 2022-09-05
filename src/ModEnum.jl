@@ -15,90 +15,58 @@ using Combinatorics
 
 
 """
-Take a mix of Additions and Merges and execute the Merges until there are
-only Additions left.
+Add, then apply merges (while accumulating future adds to make) until fixpoint
 
-We may need to pass in the pending additions into propagate! so that we avoid
-infinite loops (we keep trying to add something that needs to be added, even
-though we've already queued it up to be added.)
+We pass in the pending additions into propagate! so that we avoid infinite loops
+(otherwise we keep trying to add something that needs to be added, even though
+we've already queued it up to be added.)
 """
-function add_merge!(S::Sketch, J::SketchModel, ch::Addition; freeze_after=[])
+function prop(es::EnumState, S::Sketch, e::Int, ec::Union{Init,AddEdge,Branch})
   verbose = false
-  if verbose println("\tadd_merge! addition $ch ") end
-  m, m_change, a_change = propagate!(S, J, ch; freeze_after=freeze_after)
-  new_a_change = a_change
-  while !(is_no_op(m_change) || is_no_op(new_a_change)) # or any SketchModel change, really?
-    if verbose println("\t\tadd_merge! starting while loop w/ $ch (remaining: $a_change)") end
-    m′, m_change, new_a_change = propagate!(S, J, ch, a_change)
-    println("propagate produced m_change $m_change new_a_change $new_a_change")
-    a_change = update_changes(S,J,m′,[a_change, new_a_change])
-    m = m ⋅ m′
+  t = tgt(es.grph, e)
+  J = deepcopy(es[t])
+  m_change, a_change = propagate!(S, J, ec.add, ec.m)
+  es.prop[t] = (J.aux, a_change, m_change) # record the result of prop
+  if all(is_no_op,[a_change,m_change]) && !last(crel_to_cset(S,J.model))
+    push!(es.models,t) # found a model
   end
-  if verbose println("\t add_merge! generated $a_change") end
-  return m => a_change
+  return nothing
 end
 
+function prop(es::EnumState, S::Sketch, e::Int, ec::MergeEdge)
+  verbose = false
+  t = tgt(es.grph, e)
+  ec = es.ms[e]
+  queued, ch = ec.queued, ec.merge
+
+  J = deepcopy(es[t])
+  queued_ = update_change(S,J,ec.m, queued)
+  m_change, a_change = propagate!(S, J, ch, ec.m; queued=queued_)
+  codom(queued_.r) == codom(a_change.r) || error("HERE")
+  es.prop[t] = (J.aux, merge(S,J, queued_, a_change), m_change) # record the result of prop
+  if all(is_no_op,[a_change,m_change]) && !last(crel_to_cset(S,J.model))
+    push!(es.models,t) # found a model
+  end
+  return nothing
+end
+
+
 """
-Run additions until there's nothing to add or merge. I.e. go as far as you can w/o branching.
+Run additions until there's nothing to add or merge.
+I.e. go as far as you can w/o branching.
+
+Initialize loop with an Addition edge that has not yet been propagated.
+
 (unknown if this will enter an infinite loop and that we have to branch)
 """
-function add!(S::Sketch, J::SketchModel, ch::Addition; force=false, freeze_after=[])
-  J = deepcopy(J)
+function add!(es::EnumState, S::Sketch, e::Int; force=false)
   verbose = false
-  m = id(J.model)
-  while force || !is_no_op(ch)
-    force = false
-    if verbose println("starting add! with $ch") end
-    m′, ch = add_merge!(S, J, ch; freeze_after=freeze_after)
-    m = m⋅m′
+  while true
+    e_next = add_merge!(es, S, e)
+    if e == e_next break end
+    e = e_next
   end
-  return m => J
-end
-
-"""Initialise a sketch model and propagate"""
-function add!(S::Sketch, ch::StructACSet, freeze=Symbol[])
-  for o in [c.apex for c in S.cones if nv(c.d)==0 && nparts(ch, c.apex) == 0]
-    add_part!(ch, o)
-  end
-  J = create_premodel(S, Dict())
-  ch = cset_to_crel(S, ch)
-  ad = Addition(S, J, homomorphism(J.model,ch;monic=true), id(J.model))
-  _, J = add!(S, J, ad; force=true, freeze_after=freeze)
-  return J
-end
-
-"""
-Take a premodel and branch on a FK (favor FKs between 'frozen' objects).
-(potentially a smarter algorithm can determine where would be best to branch).
-For each branch, saturate with `add!`.
-
-TODO: branching should only consider distinct *orbits* in codomain
-      so we should be storing the Nauty res in the db
-"""
-function branch(S::Sketch, J::SketchModel; force=nothing)::Vector{Addition}
-  verbose = false
-  if verbose
-    println("entering branch w/ frozen $(J.frozen) and model ");
-    show(stdout, "text/plain", first(crel_to_cset(S,J.model)))
-  end
-  if isnothing(force)
-    score(f) = sum([src(S,f)∈J.frozen[1], tgt(S,f)∈J.frozen[1]]) +
-      (any(c->f ∈ last.(c.legs), S.cones) ? -0.5 : 0)
-    dangling = [score(f)=>f for f in setdiff(elabel(S), J.frozen[2]) if !is_total(S,J,f)]
-    branch_m = last(last(sort(dangling)))
-  else
-    branch_m = force ∈ J.frozen[2] ? error("cannot force $force") : force
-  end
-  bsrc, btgt = add_srctgt(branch_m)
-  for eqs in collect.(eq_sets(J.eqs[src(S,branch_m)]))
-    if isempty(vcat(incident(J.model, eqs, bsrc)...))
-      val = first(eqs)
-      fresh = tgt(S,branch_m) ∈ J.frozen[1] ? [] : [add_fk(S,J,branch_m,val,0)]
-      return vcat(fresh,[add_fk(S,J,branch_m,val,i)
-              for i in first.(collect.(eq_sets(J.eqs[tgt(S,branch_m)])))])
-    end
-  end
-  error("$branch_m should be in frozen: $(J.frozen)")
+  return e
 end
 
 """
@@ -113,9 +81,9 @@ No heuristic is currently used to pick which element (of the ones without the FK
 defined) gets branched on.
 """
 function find_branch_fk(S::Sketch, J::SketchModel)::Union{Nothing, Pair{Symbol,Int}}
-  score(f) = sum([src(S,f)∈J.frozen[1], tgt(S,f)∈J.frozen[1]]) +
+  score(f) = sum([src(S,f)∈J.aux.frozen[1], tgt(S,f)∈J.aux.frozen[1]]) +
                   (any(c->f ∈ last.(c.legs), S.cones) ? -0.5 : 0)
-  fs = map(setdiff(elabel(S), J.frozen[2])) do f
+  fs = map(setdiff(elabel(S), J.aux.frozen[2])) do f
     for p in parts(J.model, src(S,f))
       if isempty(incident(J.model, p, add_src(f)))
         return f => p
@@ -132,84 +100,96 @@ end
 """
 Get a list of changes to branch on, corresponding to possible assignments of a
 FK.
+We should not be branching on things that have nontrivial equivalences in
+J.eqs.
 """
-function branch_fk(S::Sketch, J::SketchModel, branch_m::Symbol, val::Int)
-  bsrc, btgt = add_srctgt(branch_m)
-  for eqs in collect.(eq_sets(J.eqs[src(S,branch_m)]))
-    if isempty(vcat(incident(J.model, eqs, bsrc)...))
-      val = first(eqs)
-      fresh = tgt(S,branch_m) ∈ J.frozen[1] ? [] : [add_fk(S,J,branch_m,val,0)]
-      return vcat(fresh,[add_fk(S,J,branch_m,val,i)
-              for i in first.(collect.(eq_sets(J.eqs[tgt(S,branch_m)])))])
-    end
+function branch_fk(es, S::Sketch, i::Int)
+  aux = es.prop[i][1]
+  J = SketchModel(es[i].model, aux)
+  branch_m, branch_val = find_branch_fk(S, J)
+  !isnothing(branch_m) || error("Do not yet support branching on anything but FKs")
+  ttab = tgt(S,branch_m)
+  for t in vcat(ttab ∉ J.aux.frozen[1] ? [0] : [], parts(J.model, ttab))
+    c = add_fk(S,J,branch_m,branch_val,t)
+    J_ = deepcopy(J)
+    m = exec_change(S, J.model, c)
+    J_.model = codom(m)
+    add_premodel(es, S, J_, parent=i=>Branch(c, m))
   end
 end
 
-"""
-Pick a premodel and apply all branches, storing result back in the db.
-Return the premodel ids that result. Return nothing if already fired.
+# """
+# Pick a premodel and apply all branches, storing result back in the db.
+# Return the premodel ids that result. Return nothing if already fired.
 
-Optionally force branching on a particular FK.
-"""
-function chase_db_step!(S::Sketch, db::EnumState, i::Int; brnch=nothing)
+# Optionally force branching on a particular FK.
+# """
+function chase_db_step!(S::Sketch, es::EnumState, e::Int)
   verbose = false
+  change = false
+  s, t = src(es.grph, e), tgt(es.grph, e)
+  if isempty(incident(es.grph, t, :src))
+    if t ∉ es.fail ∪ es.models
+      change |= true
+      if isnothing(es.prop[t])
+        if verbose println("propagating target $t") end
+        try
+          prop(es,S,e, es.ms[e])
+        catch a_ModelException
+          if a_ModelException isa ModelException
+            push!(es.fail, t)
+            if verbose println("\tMODELEXCEPTION: $(a_ModelException.msg)")
+            end
+          else
+            println("ERROR AT $t")
+            throw(a_ModelException)
+          end
+        end
+      else
+        aux, ad, mrg = es.prop[t]
+        J = SketchModel(es[t].model, aux)
+        if is_no_op(mrg)
+          if is_no_op(ad) # we branch b/c no more constraints to propagate
+            if verbose println("branching target $t") end
+            branch_fk(es, S, t)
+          else # we have additions to propagate
+            if verbose println("$t has addition to propagate (nv $(nv(es.grph)))") end
 
-  pk = db.pk[i]
-  if i ∈ db.fired || i ∈ db.models return Int[] end
-  J = deepcopy(db.premodels[pk])
-  push!(db.fired, i)
-  bm, v = isnothing(brnch) ? find_branch_fk(S,J) : (
-    brnch => findfirst(v->isempty(J.model,v,add_src(brnch),
-                       parts(J.model,src(S,brnch)))))
-  return filter(x->!isnothing(x), map(branch_fk(S,J,bm,v)) do b
-    if verbose println("\n\n\n*****\npremodel $i branching on $b") end
-    try
-      _, Jres = add!(S,J,b)
-      _, bad = crel_to_cset(S,Jres.model)
-      if !bad # NEW MODEL
-        return add_model(db, S, Jres; parent=i)
-      else
-        return add_premodel(db, S, Jres; parent=i)
-      end
-    catch a_ModelException
-      if a_ModelException isa ModelException
-        if verbose println("\tMODELEXCEPTION: $(a_ModelException.msg)") end
-      else
-        println("ERROR AT $i")
-        delete!(db.fired, i)
-        throw(a_ModelException)
+            J_ = deepcopy(J)
+            m = exec_change(S, J.model, ad)
+            J_.model = codom(m)
+
+            add_premodel(es,S,J_; parent=t=>AddEdge(ad,m))
+          end
+        else # we have merges to propagate
+          if verbose println("$t has merge to propagate (nv $(nv(es.grph)))") end
+          J_ = deepcopy(J)
+          m = exec_change(S, J.model, mrg)
+          J_.model = codom(m)
+          add_premodel(es,S,J_; parent=t=>MergeEdge(mrg, ad, m))
+
+        end
       end
     end
-  end)
+  end
+  return change
 end
+
 
 """
 Continually apply chase_db_step! while there is work remaining to be done.
 """
-function chase_db(S::Sketch, db::EnumState)
-  # existing unfired premodels
-  queue = collect(setdiff(1:length(db), db.fired ∪ db.models))
-  while !isempty(queue)
-    append!(queue, chase_db_step!(S,db,pop!(queue)))
+function chase_db(S::Sketch, es::EnumState, n=-1)
+  verbose = true
+  change = true
+  while n!=0 && change
+    n -= 1
+    change = false
+    for e in edges(es.grph)
+      change |= chase_db_step!(S,es,e)
+    end
   end
 end
-
-"""
-Initialize an EnumState with a structACSet. This is the one chance to add parts
-that are frozen.
-"""
-function init_db(S::Sketch, ad::StructACSet, freeze=Symbol[])
-  es = EnumState()
-  J = add!(S, ad, freeze)
-  _, bad = crel_to_cset(S,J.model)
-  if !bad # NEW MODEL
-    add_model(es, S, J)
-  else
-    add_premodel(es, S, J)
-  end
-  return es
-end
-
 
 """
 Enumerate elements of ℕᵏ
@@ -243,9 +223,9 @@ end
 We can reason what are the models that should come out, but not which order
 they are in, so we make sure canonical hashes match up.
 """
-function test_models(db::EnumState, S::Sketch, expected; f=identity)
+function test_models(db::EnumState, S::Sketch, expected; f=identity, include_one=false)
   Set(call_nauty(e).hsh for e in expected) == Set(
-      call_nauty(f(get_model(db,S,m))).hsh for m in db.models)
+      call_nauty(f(get_model(db,S,m))).hsh for m in db.models if include_one || m > 1)
 end
 
 end # module

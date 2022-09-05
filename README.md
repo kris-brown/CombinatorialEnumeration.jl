@@ -1,6 +1,6 @@
-# ![ModelEnumeration.jl](docs/src/assets/logo.png) ModelEnumeration.jl
-[![Documentation](https://github.com/kris-brown/ModelEnumeration.jl/workflows/Documentation/badge.svg)](https://kris-brown.github.io/ModelEnumeration.jl/dev/)
-![Tests](https://github.com/kris-brown/ModelEnumeration.jl/workflows/Tests/badge.svg)
+# ![CombinatorialEnumeration.jl](docs/src/assets/logo.png) CombinatorialEnumeration.jl
+[![Documentation](https://github.com/kris-brown/CombinatorialEnumeration.jl/workflows/Documentation/badge.svg)](https://kris-brown.github.io/CombinatorialEnumeration.jl/dev/)
+![Tests](https://github.com/kris-brown/CombinatorialEnumeration.jl/workflows/Tests/badge.svg)
 
 
 ## Motivation

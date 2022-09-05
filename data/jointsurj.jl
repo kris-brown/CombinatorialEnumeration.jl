@@ -3,7 +3,7 @@ module JointSurj
 # using Revise
 using Test
 using Catlab.CategoricalAlgebra
-using ModelEnumeration
+using CombinatorialEnumeration
 
 """
 Using the surjection encoding, this is a sketch for a pair of maps that are
@@ -39,7 +39,7 @@ S = Sketch(:JointSurj, schema, cones=[c], cocones=[cc,a_b,],eqs=eqs)
 
 function runtests()
   I = @acset S.cset begin A=2;B=2;C=2 end
-  es = init_db(S,I, [:A,:B,:C])
+  es = init_premodel(S,I, [:A,:B,:C])
   chase_db(S,es)
 
   expected = [
@@ -63,7 +63,7 @@ function runtests()
 
   # we can also, knowing what A and B are, freeze A+B.
   I = @acset S.cset begin A=2;B=2;C=2;A_B=4 end
-  es = init_db(S,I, [:A,:B,:C,:A_B])
+  es = init_premodel(S,I, [:A,:B,:C,:A_B])
   chase_db(S,es)
 
   @test test_models(es, S, expected)

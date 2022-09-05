@@ -2,10 +2,10 @@ module Sketches
 export Sketch, S0, LabeledGraph, Cone, hom_set, hom_in, hom_out,
        sketch_from_json, to_json, add_src, add_tgt, add_srctgt, dual, elabel,
        relsize, sizes, cone_leg,cone_legs, cocone_legs, cocone_leg,
-       add_cone,add_cocone, add_path, labels, vlabel, add_pathrel, add_id
+       add_cone,add_cocone, add_path, labels, vlabel, add_pathrel, add_id, show_lg
 
 using Catlab.Present, Catlab.Graphs, Catlab.Theories, Catlab.CategoricalAlgebra
-using Catlab.Programs
+using Catlab.Programs, Catlab.Graphics
 using Catlab.CategoricalAlgebra.CSetDataStructures: struct_acset
 import Catlab.Theories: dual
 import Catlab.Graphs: src, tgt, topological_sort, inneighbors, outneighbors
@@ -37,6 +37,7 @@ end;
 ) <: AbstractReflexiveGraph
 
 const LabeledGraph = LabeledGraph_{Symbol}
+show_lg(x::LabeledGraph) = to_graphviz(x; node_labels=:vlabel, edge_labels=:elabel)
 
 add_id(x::Symbol) = Symbol("id_$x")
 function add_id!(G::LabeledGraph)

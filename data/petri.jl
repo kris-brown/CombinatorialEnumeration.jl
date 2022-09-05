@@ -3,7 +3,7 @@ module Petri
 # using Revise
 using Test
 using Catlab.Present, Catlab.CategoricalAlgebra, Catlab.Theories
-using ModelEnumeration
+using CombinatorialEnumeration
 using CSetAutomorphisms
 
 
@@ -51,9 +51,9 @@ end
 
 function runtests()
   I = @acset S.cset begin S=2;T=2;I=2;O=2 end;
-  es = init_db(S,I,[:S,:T,:I,:O]);
+  es = init_premodel(S,I,[:S,:T,:I,:O]);
   chase_db(S,es)
-  expected = all_petri(2)
+  expected = all_petri(2);
   @test test_models(es, S, expected)
   return true
 end

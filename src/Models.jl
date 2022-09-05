@@ -1,5 +1,5 @@
 module Models
-export SketchModel,
+export SketchModel, AuxData,
        create_premodel,
        crel_to_cset,
        cset_to_crel,
@@ -73,7 +73,6 @@ const EQ = Dict{Symbol,
                 }
 
 """
-Data of a premodel plus all the sketch constraint information
 
 Because we cannot yet compute cones incrementally, there is no reason to cache
 any information related to cones.
@@ -88,13 +87,20 @@ frozen: whether a table/FK can possibly change. Initially, non-limit objects
         diagrams are frozen. Morphisms are frozen when they are from a frozen
         object and fully determined.
 """
-@auto_hash_equals mutable struct SketchModel{S}
-  model::StructACSet{S}
+@auto_hash_equals mutable struct AuxData
   eqs::Dict{Symbol, IntDisjointSets{Int}}
   # cones::Vector{Dict{Vector{Int},Union{Nothing,Int}}}
   cocones::Vector{Pair{IntDisjointSets{Int}, Vector{Tuple{Symbol,Int,Int}}}}
   path_eqs::EQ
   frozen::Pair{Set{Symbol},Set{Symbol}}
+end
+
+"""
+Data of a premodel plus all the auxillary sketch constraint information
+"""
+@auto_hash_equals mutable struct SketchModel{S}
+  model::StructACSet{S}
+  aux::AuxData
 end
 
 """
@@ -112,8 +118,7 @@ function create_premodel(S::Sketch, n=Dict{Symbol, Int}(), freeze_obs=Symbol[]):
     end
   end
   # handle zero obs
-  zero_obs = Set([c.apex for c in S.cocones if nv(c.d)==0]) ∪ [
-    v for v in freeze_obs if get(n,v,0) == 0]
+  zero_obs = Set([c.apex for c in S.cocones if nv(c.d)==0])
 
   change = true
   while change  # Maps into zero obs are zero obs
@@ -128,7 +133,7 @@ function create_premodel(S::Sketch, n=Dict{Symbol, Int}(), freeze_obs=Symbol[]):
   end
 
   for o in zero_obs
-    if haskey(n, o) n[o] == 0 || error("bad")
+    if haskey(n, o) n[o] == 0 || error("bad o $o n[o] $(n[o])")
     else  n[o] = 0
     end
   end
@@ -168,7 +173,7 @@ function create_premodel(S::Sketch, n=Dict{Symbol, Int}(), freeze_obs=Symbol[]):
       end
     end
   end)
-  return SketchModel(J,eqs,cocones,path_eqs, freeze_obs=>freeze_arrs)
+  return SketchModel(J,AuxData(eqs,cocones,path_eqs, freeze_obs=>freeze_arrs))
 end
 
 """
@@ -273,7 +278,7 @@ struct Addition{S} <: Change{S}
     dom(l)==dom(r) || error("addition must be a span")
     codom(r) == J.model || error("addition doesn't match")
 
-    map(collect(union(J.frozen...) ∩ (vlabel(S)∪elabel(S)))) do s
+    map(collect(union(J.aux.frozen...) ∩ (vlabel(S)∪elabel(S)))) do s
       nd, ncd = nparts(dom(l), s), nparts(codom(l),s)
       nd <= ncd || error("cannot add $s (frozen): $nd -> $ncd")
     end
@@ -333,7 +338,7 @@ struct Merge{S} <: Change{S}
         # Quotient the eq classes immediately
         for vs in filter(x->length(x)>1, vvs)
           for (v1, v2) in zip(vs, vs[2:end])
-            union!(J.eqs[k], v1, v2)
+            union!(J.aux.eqs[k], v1, v2)
           end
         end
       end
@@ -344,7 +349,7 @@ struct Merge{S} <: Change{S}
       if nparts(I,v) == 1 error(I) end
     end
 
-    map(collect(union(J.frozen...)∩(vlabel(S)∪elabel(S)))) do s
+    map(collect(union(J.aux.frozen...)∩(vlabel(S)∪elabel(S)))) do s
       nd, ncd = nparts(dom(ir), s), nparts(codom(ir),s)
       nd == ncd || error("cannot merge/add $s (frozen): $nd -> $ncd")
     end
@@ -380,10 +385,10 @@ end
 Apply a change to CSet. This does *not* update the eqs/(co)cones/patheqs. Just
 returns a model morphism from applying the change.
 """
-function exec_change(S::Sketch, J::StructACSet{Sc},e::Change{Sc}
+function exec_change(S::Sketch, J::StructACSet{Sc},e::Change
                      )::ACSetTransformation where {Sc}
   codom(e.r) == J || error("Cannot apply change. No match.")
-  is_natural(e.r) || error(println.(components(e.r)))
+  is_natural(e.r) || error(println.(pairs(components(e.r))))
   dom(e.l) == dom(e.r) || error("baddom")
   res = pushout(e.l, e.r) |> collect |> last
   return res ⋅ rem_dup_relations(S, codom(res))
@@ -473,10 +478,10 @@ Get something that `x` is related to by `f`, if anything
 """
 function fk(S::Sketch, J::SketchModel, f::Symbol, x::Int)
   from_map, to_map = add_srctgt(f)
-  xs = eq_class(J.eqs[src(S,f)], x)
+  xs = eq_class(J.aux.eqs[src(S,f)], x)
   fs = vcat(incident(J.model,xs,from_map)...)
   if isempty(fs) return nothing end
-  return find_root!(J.eqs[tgt(S,f)], J.model[first(fs), to_map])
+  return find_root!(J.aux.eqs[tgt(S,f)], J.model[first(fs), to_map])
 end
 
 
@@ -495,7 +500,7 @@ end
 
 
 """Check if a morphism in a premodel is total, modulo equivalence classes"""
-is_total(S::Sketch, J::SketchModel, e::Symbol) = is_total(S,J.model,J.eqs,e)
+is_total(S::Sketch, J::SketchModel, e::Symbol) = is_total(S,J.model,J.aux.eqs,e)
 
 function is_total(S::Sketch, J::StructACSet,
                   eqs::Dict{Symbol, IntDisjointSets{Int}}, e::Symbol)::Bool
@@ -511,9 +516,9 @@ fk_in(S::Sketch, J::SketchModel, f::Symbol, y::Int) = fk_in(S,J,f,[y])
 function fk_in(S::Sketch, J::SketchModel, f::Symbol, ys::AbstractVector{Int})
   if isempty(ys) return [] end
   from_map, to_map = add_srctgt(f)
-  ys = union([eq_class(J.eqs[tgt(S,f)], y) for y in ys]...)
+  ys = union([eq_class(J.aux.eqs[tgt(S,f)], y) for y in ys]...)
   fs = vcat(incident(J.model,ys,to_map)...)
-  xs = [find_root!(J.eqs[src(S,f)], x) for x in J.model[fs, from_map]]
+  xs = [find_root!(J.aux.eqs[src(S,f)], x) for x in J.model[fs, from_map]]
   return xs |> unique
 end
 
@@ -600,6 +605,73 @@ can ignore a change
 is_no_op(ch::Change) = all(f->dom(f)==codom(f) && isperm(collect(f)),
                            collect(components(ch.l)))
 
+function merge_eq(S::Sketch, J::StructACSet, eqclasses::Dict{Symbol, IntDisjointSets{Int}}
+  )
+  function eq_dicts(eq::Dict{Symbol, IntDisjointSets{Int}})::Dict{Symbol, Dict{Int,Int}}
+    res = Dict{Symbol, Dict{Int,Int}}()
+    for (k, v) in pairs(eq)
+      d = Dict{Int, Int}()
+      for es in eq_sets(v)
+        m = minimum(es)
+        for e in es
+          d[e] = m
+        end
+      end
+      res[k] = d
+    end
+    return res
+  end
+  verbose = false
+  J = deepcopy(J)
+  # Initialize a function mapping values to their new (quotiented) value
+  μ = eq_dicts(eqclasses)
+
+  # Initialize a record of which values are to be deleted
+  delob = DefaultDict{Symbol, Vector{Int}}(Vector{Int})
+
+  # Populate `delob` from `eqclasses`
+  for (o, eq) in pairs(eqclasses)
+    eqsets = eq_sets(eq; remove_singles=true)
+    # Minimum element is the representative
+    for vs in map(collect,collect(values(eqsets)))
+      m = minimum(vs)
+      vs_ = [v for v in vs if v!=m]
+      append!(delob[o], collect(vs_))
+    end
+  end
+
+  # Replace all instances of a class with its representative in J
+  # could be done in parallel
+  for d in elabel(S)
+    dsrc, dtgt = add_srctgt(d)
+    μsrc, μtgt = μ[src(S, d)], μ[tgt(S, d)]
+    isempty(μsrc) || set_subpart!(J, dsrc, replace(J[dsrc], μsrc...))
+    isempty(μtgt) || set_subpart!(J, dtgt, replace(J[dtgt], μtgt...))
+  end
+
+  # Detect redundant duplicate relation rows
+  for d in elabel(S) # could be done in parallel
+    dsrc, dtgt = add_srctgt(d)
+    seen = Set{Tuple{Int,Int}}()
+    for (i, st) in enumerate(zip(J[dsrc], J[dtgt]))
+      if st ∈ seen
+        push!(delob[d], i)
+      else
+        push!(seen, st)
+      end
+    end
+  end
+  # Remove redundant duplicate relation rows
+  for (o, vs) in collect(delob)
+    isempty(vs) || rem_parts!(J, o, sort(vs))
+  end
+  return J #μ
+end
+
+frozen_hom(S,J,h) =  h ∈ J.aux.frozen[2] || any(v->h==add_id(v), vlabel(S))
+
+
+
 # """Imperative approach to this."""
 # function exec_change!(S::Sketch, J::StructACSet,
 #                       m::Dict{Symbol, Vector{Vector{Int}}})
@@ -680,70 +752,5 @@ It is best to run this right after quotienting the equivalence classes.
 
 # add_rel!(S::Sketch, J::StructACSet, f::Symbol, i::Int, j::Int) =
 #    add_part!(J, f; Dict(zip(add_srctgt(f), [i,j]))...)
-
-function merge_eq(S::Sketch, J::StructACSet, eqclasses::Dict{Symbol, IntDisjointSets{Int}}
-  )
-  function eq_dicts(eq::Dict{Symbol, IntDisjointSets{Int}})::Dict{Symbol, Dict{Int,Int}}
-    res = Dict{Symbol, Dict{Int,Int}}()
-    for (k, v) in pairs(eq)
-      d = Dict{Int, Int}()
-      for es in eq_sets(v)
-        m = minimum(es)
-        for e in es
-          d[e] = m
-        end
-      end
-      res[k] = d
-    end
-    return res
-  end
-  verbose = false
-  J = deepcopy(J)
-  # Initialize a function mapping values to their new (quotiented) value
-  μ = eq_dicts(eqclasses)
-
-  # Initialize a record of which values are to be deleted
-  delob = DefaultDict{Symbol, Vector{Int}}(Vector{Int})
-
-  # Populate `delob` from `eqclasses`
-  for (o, eq) in pairs(eqclasses)
-    eqsets = eq_sets(eq; remove_singles=true)
-    # Minimum element is the representative
-    for vs in map(collect,collect(values(eqsets)))
-      m = minimum(vs)
-      vs_ = [v for v in vs if v!=m]
-      append!(delob[o], collect(vs_))
-    end
-  end
-
-  # Replace all instances of a class with its representative in J
-  # could be done in parallel
-  for d in elabel(S)
-    dsrc, dtgt = add_srctgt(d)
-    μsrc, μtgt = μ[src(S, d)], μ[tgt(S, d)]
-    isempty(μsrc) || set_subpart!(J, dsrc, replace(J[dsrc], μsrc...))
-    isempty(μtgt) || set_subpart!(J, dtgt, replace(J[dtgt], μtgt...))
-  end
-
-  # Detect redundant duplicate relation rows
-  for d in elabel(S) # could be done in parallel
-    dsrc, dtgt = add_srctgt(d)
-    seen = Set{Tuple{Int,Int}}()
-    for (i, st) in enumerate(zip(J[dsrc], J[dtgt]))
-      if st ∈ seen
-        push!(delob[d], i)
-      else
-        push!(seen, st)
-      end
-    end
-  end
-  # Remove redundant duplicate relation rows
-  for (o, vs) in collect(delob)
-    isempty(vs) || rem_parts!(J, o, sort(vs))
-  end
-  return J #μ
-end
-
-frozen_hom(S,J,h) =  h ∈ J.frozen[2] || any(v->h==add_id(v), vlabel(S))
 
 end # module

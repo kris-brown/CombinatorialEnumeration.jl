@@ -3,7 +3,7 @@ module Coequalizer
 # using Revise
 using Test
 using Catlab.Present, Catlab.CategoricalAlgebra, Catlab.Theories
-using ModelEnumeration
+using CombinatorialEnumeration
 using CSetAutomorphisms
 
 include(joinpath(@__DIR__, "equalizer.jl"))
@@ -13,7 +13,7 @@ S = dual(Equalizer.S, :Coequalizer, [:E=>:C, :e=>:c])
 function runtests()
 
   I = @acset S.cset begin A=2;B=2 end
-  es = init_db(S,I, [:A,:B])
+  es = init_premodel(S,I, [:A,:B])
   chase_db(S,es)
 
   expected =[

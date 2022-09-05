@@ -1,8 +1,9 @@
 module Equalizer
 
+using Revise
 using Test
 using Catlab.Present, Catlab.CategoricalAlgebra, Catlab.Theories
-using ModelEnumeration
+using CombinatorialEnumeration
 using CSetAutomorphisms
 
 
@@ -20,8 +21,9 @@ S = Sketch(:Equalizer, eqschema, cones=[Cone(eqconed, :E, [1=>:e,2=>:e])]);
 
 function runtests()
   I = @acset S.cset begin A=2;B=2 end
-  es = init_db(S,I, [:A,:B])
+  es = init_premodel(S,I, [:A,:B])
   chase_db(S,es)
+  ms = [get_model(es,S,i) for i in es.models]
 
   expected =[
     # f,g both const and point to same element

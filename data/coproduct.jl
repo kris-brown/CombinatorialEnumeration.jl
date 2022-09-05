@@ -1,8 +1,9 @@
 module Coproduct
 
+# using Revise
 using Test
 using Catlab.CategoricalAlgebra
-using ModelEnumeration
+using CombinatorialEnumeration
 
 """
 Using the surjection encoding, this is a sketch for a pair of maps that are *jointly surjective*.
@@ -21,14 +22,16 @@ S = Sketch(:Coprod, schema, cocones=[a_a,])
 
 function runtests()
   I = @acset S.cset begin A=3 end
-  es = init_db(S,I, [:A])
+  es = init_premodel(S,I, [:A])
   expected = @acset S.cset begin A=3;A_A=6; iA=[1,2,3];iB=[4,5,6] end
-  @test is_isomorphic(get_model(es,S,only(es.models)), expected)
+  chase_db(S,es)
+  @test test_models(es, S, [expected])
 
   I = @acset S.cset begin A=3; A_A=6 end
-  es = init_db(S,I, [:A,:A_A])
+  es = init_premodel(S,I, [:A,:A_A])
   chase_db(S,es)
-  @test is_isomorphic(get_model(es,S,only(es.models)), expected)
+  @test test_models(es, S, [expected])
+  return true
 end
 
 end # module

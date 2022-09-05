@@ -1,8 +1,8 @@
-module JointSurj
+module Perm
 
 # using Revise
 using Catlab.CategoricalAlgebra
-using ModelEnumeration
+using CombinatorialEnumeration
 using Test
 
 """
@@ -21,7 +21,7 @@ S = Sketch(:perm, permschema, eqs=[[[:f, :f⁻¹],Symbol[]]])
 
 function runtests()
     I = @acset S.cset begin X=3 end
-    es = init_db(S,I, [:X])
+    es = init_premodel(S,I, [:X])
     chase_db(S,es)
 
     expected = [

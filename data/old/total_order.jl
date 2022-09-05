@@ -1,7 +1,7 @@
 using Test
 # using Revise
 using Catlab.CategoricalAlgebra
-using ModelEnumeration
+using CombinatorialEnumeration
 
 """
 Total orders
@@ -93,7 +93,7 @@ end
 ##########
 r1, r2, r3 = from_int.(1:3) # (1,1), (2,3), (3,6)
 
-db = init_db(reset=true)
+db = init_premodel(reset=true)
 S = to_sketch;
 Jinit = create_premodel(S, [:I=>1, :Leq=>1])
 chase_set(db, S, StructACSet[Jinit], 2)

@@ -28,13 +28,13 @@ function quotient_functions!(S::Sketch, J::SketchModel, h::CSetTransformation,
       els = preimage(m.l[v], eqc)
       if length(els) > 1
         # get everything equivalent to these elements, *including* new info
-        r_eqcs = Set([find_root!(J.eqs[v], e) for e in (m.r ⋅ h)[v](els)])
-        r_els = findall(i->find_root!(J.eqs[v], i) ∈ r_eqcs, parts(J.model, v))
+        r_eqcs = Set([find_root!(J.aux.eqs[v], e) for e in (m.r ⋅ h)[v](els)])
+        r_els = findall(i->find_root!(J.aux.eqs[v], i) ∈ r_eqcs, parts(J.model, v))
         for h in hom_out(S, v)
           s, t = add_srctgt(h)
           targ = tgt(S,h)
           ts = J.model[vcat(incident(J.model, r_els, s)...), t]
-          t_eqcs = Set([find_root!(J.eqs[targ], i) for i in ts])
+          t_eqcs = Set([find_root!(J.aux.eqs[targ], i) for i in ts])
           if length(t_eqcs) > 1
             push!(res, Merge(S, J, Dict([targ=>[collect(t_eqcs)]])))
           end
@@ -74,10 +74,10 @@ function quotient_functions!(S::Sketch, J_::SketchModel, h::CSetTransformation,
         s = (ad.r ⋅ h)[srcobj](only(i_src))
         rel = incident(J, s, dsrc) # get all the relations the source has already
         # Get the eq classes of things the source is related to
-        t_eqcs = Set([find_root!(J_.eqs[tgtobj], t) for t in J[rel, dtgt]])
+        t_eqcs = Set([find_root!(J_.aux.eqs[tgtobj], t) for t in J[rel, dtgt]])
         if length(t_eqcs) > 1
           if verbose println("isrc $i_src t_eqcs $t_eqcs") end
-          if tgtobj ∈ J_.frozen[1] throw(ModelException("Functionality imposs")) end
+          if tgtobj ∈ J_.aux.frozen[1] throw(ModelException("Functionality imposs")) end
           push!(res, Merge(S, J_, Dict([tgtobj=>[collect(t_eqcs)]])))
         end
       end

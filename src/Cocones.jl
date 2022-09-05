@@ -29,7 +29,7 @@ function propagate_cocones!(S::Sketch,J::SketchModel,f::CSetTransformation,ch::C
   res = Change[]
   for (i,cc) in enumerate(S.cocones)
     legcond = any(l->!is_surjective(f[l]), unique(last.(cc.legs)))
-    if legcond || !([cc.apex,vlabel(cc)...]⊆J.frozen[1] && ((last.(cc.legs) ∪ elabel(cc)) ⊆ J.frozen[2]))
+    if legcond || !([cc.apex,vlabel(cc)...] ⊆ J.aux.frozen[1] && ((last.(cc.legs) ∪ elabel(cc)) ⊆ J.aux.frozen[2]))
       append!(res, propagate_cocone!(S, J, f, i, ch))
     end
   end
@@ -41,7 +41,7 @@ Rebuild the cocone equivalence classes (across different tables) from scratch.
 This could be made more incremental using the change + the old cocone data
 """
 function update_cocones!(S::Sketch,J::SketchModel,f::ACSetTransformation,ch::Change)
-  new_cocones = map(zip(S.cocones, J.cocones)) do (c, (_,_))
+  new_cocones = map(zip(S.cocones, J.aux.cocones)) do (c, (_,_))
 
     # create new aggregation of all tables in the cocone diagram
     cdict = Tuple{Symbol, Int, Int}[]
@@ -64,7 +64,7 @@ function update_cocones!(S::Sketch,J::SketchModel,f::ACSetTransformation,ch::Cha
     end
 
     # merge elements based on eq
-    for (v, veq) in J.eqs
+    for (v, veq) in J.aux.eqs
       for eqset in collect.(eq_sets(veq; remove_singles=true))
         e1, rest... = collect(eqset)
         [union!(new_eq, cdict_inv[v=>e1], cdict_inv[v=>i]) for i in rest]
@@ -89,7 +89,7 @@ function update_cocones!(S::Sketch,J::SketchModel,f::ACSetTransformation,ch::Cha
     return new_eq => cdict
   end
 
-  J.cocones = new_cocones
+  J.aux.cocones = new_cocones
 end
 
 """
@@ -106,8 +106,8 @@ There are two ways to perform cocone constraint inference:
 """
 function propagate_cocone!(S::Sketch, J::SketchModel,f::CSetTransformation, ci::Int,  c::Change)
   verbose = false
-  cc, (ccdata, cd), res = S.cocones[ci], J.cocones[ci], Change[]
-  if verbose println("updating cocone $ci with frozen $(J.frozen) apex $(cc.apex) po data $(J.cocones) and ")
+  cc, (ccdata, cd), res = S.cocones[ci], J.aux.cocones[ci], Change[]
+  if verbose println("updating cocone $ci with frozen $(J.aux.frozen) apex $(cc.apex) po data $(J.aux.cocones) and ")
   show(stdout,"text/plain",crel_to_cset(S, J.model)[1])
   end
   # We care about, ∀ apexes, which connected components map to it
@@ -124,21 +124,21 @@ function propagate_cocone!(S::Sketch, J::SketchModel,f::CSetTransformation, ci::
       end
     end
   end
-  frozen_diag = vlabel(cc) ⊆ J.frozen[1] && elabel(cc) ⊆ J.frozen[2]
+  frozen_diag = vlabel(cc) ⊆ J.aux.frozen[1] && elabel(cc) ⊆ J.aux.frozen[2]
   if verbose println("cc_to_ap $cc_to_ap\nap_to_cc $ap_to_cc") end
   # 1.) check for apex elements that should be merged
   for vs in collect.(filter(x->length(x)>1, collect(values(cc_to_ap))))
-    if cc.apex ∈ J.frozen[1]
+    if cc.apex ∈ J.aux.frozen[1]
       throw(ModelException("$(cc.apex)#$vs must be merged, but it is frozen"))
     end
     if verbose println("MERGING COCONE APEX ELEMS $vs") end
     push!(res, Merge(S,J,Dict(cc.apex=>[vs])))
   end
   # 2a) if diagram completely determined, we have one apex elem per connected comp
-  if frozen_diag && cc.apex ∉ J.frozen[1]
+  if frozen_diag && cc.apex ∉ J.aux.frozen[1]
     for cc_root in unique(find_root!(ccdata, i) for i in 1:length(ccdata))
       if !haskey(cc_to_ap, cc_root)
-        if cc.apex ∈ J.frozen[1]
+        if cc.apex ∈ J.aux.frozen[1]
           throw(ModelException("Diagram completely determined but connected component $cc_root not matched to apex"))
         end
         if verbose println("New cc_root that is unmatched $cc_root") end
@@ -183,9 +183,9 @@ function propagate_cocone!(S::Sketch, J::SketchModel,f::CSetTransformation, ci::
     end
   end
   # cardinality checks if the apex # is known
-  if cc.apex ∈ J.frozen[1]
-    startJ = project(S,merge_eq(S,J.model,J.eqs), cc)
-    mn, mx = [minmax_groups(S,startJ,J.frozen, cc, ccdata, cd; is_min=x) for x in [true,false]]
+  if cc.apex ∈ J.aux.frozen[1]
+    startJ = project(S,merge_eq(S,J.model,J.aux.eqs), cc)
+    mn, mx = [minmax_groups(S,startJ,J.aux.frozen, cc, ccdata, cd; is_min=x) for x in [true,false]]
     if verbose println("mn $mn -- parts $(nparts(J.model, cc.apex)) -- mx $mx\n")
     end
     if !(mn <= nparts(J.model, cc.apex) <= mx)
@@ -194,7 +194,7 @@ function propagate_cocone!(S::Sketch, J::SketchModel,f::CSetTransformation, ci::
   end
 
   # 2.) check for connected components that cannot possibly be merged
-  startJ = project(S,merge_eq(S,J.model,J.eqs), cc)
+  startJ = project(S,merge_eq(S,J.model,J.aux.eqs), cc)
   if verbose
     println("check for connected components that cannot possibly be merged")
     println("values(ap_to_cc) $(collect(values(ap_to_cc)))")
@@ -202,7 +202,7 @@ function propagate_cocone!(S::Sketch, J::SketchModel,f::CSetTransformation, ci::
   for vs in collect.(filter(x->length(x)>1, collect(values(ap_to_cc))))
     # conservative approach - don't try anything if tables not frozen
     # TODO revisit this assumption, maybe something can still be inferred?
-    if vlabel(cc) ⊆ J.frozen[1]
+    if vlabel(cc) ⊆ J.aux.frozen[1]
       if !connection_possible(S, startJ, cc, ccdata, cd, vs)
         throw(ModelException("Connected components cannot possibly be merged"))
       end

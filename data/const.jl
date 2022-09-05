@@ -1,7 +1,7 @@
 module Const
 
 using Catlab.CategoricalAlgebra
-using ModelEnumeration
+using CombinatorialEnumeration
 using Test
 """
 CONSTANTS
@@ -18,7 +18,7 @@ S = Sketch(:const, constschema, cones=[Cone(:I)])
 
 function runtests()
   I = @acset S.cset begin A=3 end
-  es = init_db(S,I, [:A])
+  es = init_premodel(S,I, [:A])
   chase_db(S,es)
   expected = [
     # f and g are the same

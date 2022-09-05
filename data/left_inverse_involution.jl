@@ -3,7 +3,7 @@ module LeftInvInvolution
 # using Revise
 using Test
 using Catlab.CategoricalAlgebra
-using ModelEnumeration
+using CombinatorialEnumeration
 
 """
 LEFT INVERSE / INVOLUTION
@@ -40,14 +40,14 @@ S = Sketch(:FG, fgschema; eqs=[
 
 function runtests()
   I = @acset S.cset begin A=1;B=2 end
-  es = init_db(S,I,[:A,:B])
+  es = init_premodel(S,I,[:A,:B])
   chase_db(S,es)
   expected = [@acset(S.cset, begin A=1;B=2;f=1;g=1;inv=[1,2]end), # id inv
               @acset(S.cset, begin A=1;B=2;f=1;g=1;inv=[2,1]end)] # swap inv
   @test test_models(es, S, expected)
 
   I = @acset S.cset begin A=2;B=2 end
-  es = init_db(S,I,[:A,:B])
+  es = init_premodel(S,I,[:A,:B])
   chase_db(S,es)
   expected = [@acset(S.cset, begin A=2;B=2;f=[1,2];g=[1,2];inv=[1,2]end), # id
               @acset(S.cset, begin A=2;B=2;f=[1,2];g=[1,2];inv=[2,1]end)] # swap
@@ -55,10 +55,13 @@ function runtests()
 
 
   I = @acset S.cset begin A=2;B=1 end
-  @test_throws(ModelException, init_db(S,I,[:A,:B])) # no left inv poss' for f
+  es = init_premodel(S,I,[:A,:B])
+  chase_db(S,es)
+  @test test_models(es, S, []) # no left inv possible for f
+
 
   I = @acset S.cset begin A=2;B=3 end
-  es = init_db(S,I,[:A,:B])
+  es = init_premodel(S,I,[:A,:B])
   chase_db(S,es)
 
   # think of A as picking out a subset of B, f(A). let the excluded element be bₓ

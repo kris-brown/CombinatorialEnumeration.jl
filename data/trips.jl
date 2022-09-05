@@ -1,7 +1,7 @@
 module Trips
 
 using Catlab.CategoricalAlgebra
-using ModelEnumeration
+using CombinatorialEnumeration
 using Test
 
 """
@@ -18,11 +18,13 @@ S = Sketch(:trips, tripschema, cones=[Cone(td, :s3, [1=>:p1,2=>:p2, 3=>:p3])])
 
 function runtests()
   I = @acset S.cset begin s=2 end
-  es = init_db(S,I)
+  es = init_premodel(S,I)
+  chase_db(S,es)
   ex = @acset S.cset begin s=2; s3=8;
     p1=[1,2,1,2,1,2,1,2]; p2=[1,1,2,2,1,1,2,2]; p3=[1,1,1,1,2,2,2,2]
   end
-  @test is_isomorphic(ex, get_model(es,S,1))
+  @test test_models(es, S, [ex])
+
   return true
 end
 

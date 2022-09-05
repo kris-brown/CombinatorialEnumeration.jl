@@ -1,4 +1,4 @@
-name = "ModelEnumeration"
+name = "CombinatorialEnumeration"
 uuid = "fc1462b8-e790-43d8-8e6e-8820fe0073d6"
 authors = ["Kris Brown <ksb@stanford.edu>"]
 version = "0.1.0"

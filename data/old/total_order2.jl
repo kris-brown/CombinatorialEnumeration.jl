@@ -1,5 +1,5 @@
 # using Revise
-using ModelEnumeration
+using CombinatorialEnumeration
 using Catlab.CategoricalAlgebra
 """
 Leq as map from I×I to Bool (1+1).
@@ -114,7 +114,7 @@ function from_int(n::Int)::StructACSet
 end
 v1, v2, v3, v4, v5 = from_int.([1,2,3,4,5])
 #
-db = init_db(reset=true)
+db = init_premodel(reset=true)
 
 S= to_sketch;
 Jinit = create_premodel(S, [:I=>5])

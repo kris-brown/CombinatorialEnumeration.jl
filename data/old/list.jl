@@ -14,8 +14,6 @@ Nontrivial models are infinite because, given a finite set of lists of size |S|,
 there will be set of nonempty lists of size |S| - 1. And for each of these,
 there will be a pair set of size (|S| - 1)*|D|, which will create that many
 extra lists.
-
-An alternate formulation that has finite models is in vec.jl
 """
 
 one, d_s = Symbol.(["1", "d×s"])

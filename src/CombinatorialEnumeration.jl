@@ -1,4 +1,4 @@
-module ModelEnumeration
+module CombinatorialEnumeration
 using Reexport
 
 include(joinpath(@__DIR__, "Sketches.jl"))

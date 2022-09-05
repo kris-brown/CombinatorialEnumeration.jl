@@ -3,7 +3,7 @@ module ReflGraph
 # using Revise
 using Test
 using Catlab.CategoricalAlgebra
-using ModelEnumeration
+using CombinatorialEnumeration
 
 
 """# REFLEXIVE GRAPHS #
@@ -21,7 +21,7 @@ S = Sketch(:reflgraph, schema, eqs=[[[:refl, :src], Symbol[]], [[:refl, :tgt], S
 
 function runtests()
     I = @acset S.cset begin V=2; E=3 end
-    es = init_db(S,I, [:V,:E])
+    es = init_premodel(S,I, [:V,:E])
     chase_db(S,es)
 
     expected = [
@@ -31,7 +31,9 @@ function runtests()
     @test test_models(es, S, expected)
 
     I = @acset S.cset begin V=2; E=1 end
-    @test_throws(ModelException,init_db(S,I, [:V,:E]))
+    es = init_premodel(S,I, [:V,:E])
+    chase_db(S,es)
+    @test test_models(es, S, [])
     return true
 end
 

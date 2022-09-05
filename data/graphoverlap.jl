@@ -4,12 +4,12 @@ module GraphOverlap
 using Test
 using Catlab.CategoricalAlgebra, Catlab.Graphics, Catlab.Present, Catlab.Graphs
 using Catlab.Graphics
-using ModelEnumeration
-using ModelEnumeration.Models: is_surjective
+using CombinatorialEnumeration
+using CombinatorialEnumeration.Models: is_surjective
 using DataStructures
 using CSetAutomorphisms
-import ModelEnumeration
-const LG = ModelEnumeration.LabeledGraph
+import CombinatorialEnumeration
+const LG = CombinatorialEnumeration.LabeledGraph
 
 """
 Using the surjection encoding, this is a sketch for a two pairs of maps that are
@@ -136,7 +136,7 @@ parse_result(X::StructACSet) = parse_result(X,R())
 function runtests()
   pg = path_graph(Graph,2)
   I = init_graphs(pg,pg)
-  es = init_db(S,I, [:V₁, :V₂, :E₁,:E₂])
+  es = init_premodel(S,I, [:V₁, :V₂, :E₁,:E₂])
   chase_db(S,es);
 
 

@@ -2,9 +2,9 @@ module TestModels
 
 # using Revise
 using Test
-using ModelEnumeration
+using CombinatorialEnumeration
 using Catlab.CategoricalAlgebra
-using ModelEnumeration.Models: test_premodel
+using CombinatorialEnumeration.Models: test_premodel
 
 include(joinpath(@__DIR__, "TestSketch.jl"));
 
@@ -29,7 +29,7 @@ ad = Addition(S,J,homomorphism(J.model, newvals), id(J.model))
 
 J = test_premodel(S,@acset(S.cset, begin
   A=5;B=5;f=[1,2,3,4,5] end))
-J.frozen = Set{Symbol}() => Set{Symbol}()
+J.aux.frozen = Set{Symbol}() => Set{Symbol}()
 md = Dict([:A=>[[2,3],[4,5]], :B=>[[1,5]]])
 
 J_ = deepcopy(J)
@@ -39,8 +39,8 @@ m = Merge(S, J_, md); # Model's eq classes are modified by
 
 
 # constructing Merge
-@test J_.eqs[:A].parents == [1,2,2,4,4]
-@test J_.eqs[:B].parents == [1,2,3,4,1]
+@test J_.aux.eqs[:A].parents == [1,2,2,4,4]
+@test J_.aux.eqs[:B].parents == [1,2,3,4,1]
 result = codom(exec_change(S, J_.model, m))
 @test nparts(result, :A) == 3
 @test nparts(result, :B) == 4
@@ -53,7 +53,7 @@ newvals = @acset(S.crel, begin
   A=2;B=2;I=1;f=2; Cone_I=1; Cone_I_apex=1
   src_f=[1,2];tgt_f=[1,2] end)
 J = test_premodel(S,@acset(S.cset, begin A=2;I=1;Cone_I=1;Cone_I_apex=1;end))
-J.frozen = Set{Symbol}()=>Set{Symbol}()
+J.aux.frozen = Set{Symbol}()=>Set{Symbol}()
 J_orig = deepcopy(J)
 
 ad = Addition(S,J, homomorphism(J.model, newvals; monic=true), id(J.model))

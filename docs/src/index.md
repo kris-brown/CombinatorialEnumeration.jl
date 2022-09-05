@@ -1,4 +1,4 @@
-# ModelEnumeration.jl
+# CombinatorialEnumeration.jl
 
 This package implements a constrained search algorithm, with constraints
 specified in the language of category theory. Formally, given a finite (co)-

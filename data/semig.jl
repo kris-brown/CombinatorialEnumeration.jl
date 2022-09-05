@@ -1,8 +1,9 @@
 module Semigroup
 
-using Revise
+# using Revise
+using Test
 using Catlab.CategoricalAlgebra
-using ModelEnumeration
+using CombinatorialEnumeration
 using CSetAutomorphisms
 
 """
@@ -53,7 +54,7 @@ function binfuns(i::Int)::Vector{Matrix{Int}}
   res = Matrix{Int}[]
   for x in Iterators.product([1:i for _ in 1:i^2]...)
     mat = reshape(collect(x), i, i)
-    if isnothing(test_assoc(mat)) push!(res, mat); print(" $(length(res))") end
+    if isnothing(test_assoc(mat)) push!(res, mat);  end
   end
   res
 end
@@ -156,16 +157,12 @@ get_semis(i::Int) = collect(Set(values(Dict(map(from_matrix.(binfuns(i))) do m
   call_nauty(m).hsh => m
 end))))
 
-# function runtests()
-using ModelEnumeration.ModEnum: chase_db_step!
-I = @acset S.cset begin s=2 end;
-es = init_db(S,I, [:s]);
-chase_db(S,es)
-@test test_models(es,S,get_semis(2))
-#
-
-
-#ms = get_models(es, S, maxsize=3);
-#end
+function runtests()
+  I = @acset S.cset begin s=2 end;
+  es = init_premodel(S,I, [:s]);
+  chase_db(S,es)
+  @test test_models(es,S,get_semis(2))
+  return true
+end
 
 end # module

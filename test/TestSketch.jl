@@ -1,5 +1,5 @@
 # using Revise
-using ModelEnumeration
+using CombinatorialEnumeration
 using Catlab.CategoricalAlgebra
 
 """

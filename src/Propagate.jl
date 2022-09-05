@@ -38,32 +38,28 @@ that need to be made.
 
 We may be propagating a change while there is already an addition queued.
 """
-function propagate!(S::Sketch, J::SketchModel{Sc}, c::Change{Sc};
-                    queued=nothing, freeze_after=[]) where Sc
+function propagate!(S::Sketch, J::SketchModel{Sc},
+                    c::Change{Sc}, m::ACSetTransformation;
+                    queued=nothing) where Sc
   if isnothing(queued) queued = Addition(S,J) end
-  m = exec_change(S, J.model, c)
-  J.frozen = union(J.frozen[1], freeze_after) => J.frozen[2]
   verbose = false
 
-  # update model
-  J.model = codom(m)
-  # show(stdout, "text/plain", J.model)
-
   update_eqs!(J,m)
-  if verbose println("\t\told frozen $(J.frozen)") end
+  if verbose println("\t\told frozen $(J.aux.frozen)") end
   update_frozen!(S,J,m,c,queued)
-  if verbose println("\t\tnew frozen $(J.frozen)") end
+  if verbose println("\t\tnew frozen $(J.aux.frozen)") end
   update_patheqs!(S, J, m)
-  update_cocones!(S,J,m,c)
+  update_cocones!(S, J, m, c)
 
   # update (co)cones patheqs and quotient by functionality
   updates = vcat(
     set_terminal(S,J),
     quotient_functions!(S,J,m,c), propagate_cones!(S,J,m,c),
     propagate_cocones!(S,J,m,c), propagate_patheqs!(S,J,m,c))
+
   m_update = merge(S,J,Merge[u for u in updates if u isa Merge])
   a_update = merge(S,J,Addition[u for u in updates if u isa Addition])
-  (m, m_update, a_update)
+  (m_update, a_update)
 end
 
 """
@@ -72,7 +68,7 @@ All maps into frozen objects of cardinality 1 are determined
 function set_terminal(S::Sketch,J::SketchModel)
   verbose = false
   res = Addition[]
-  for v in J.frozen[1]
+  for v in J.aux.frozen[1]
     if nparts(J.model, v) == 1 # all maps into this obj must be 1
       for e in hom_in(S,v)
         e_s, e_t = add_srctgt(e)
@@ -90,7 +86,7 @@ end
 Modify union find structures given a model update
 """
 function update_eqs!(J::SketchModel,m::ACSetTransformation)
-  J.eqs = Dict(map(collect(J.eqs)) do (v, eq)
+  J.aux.eqs = Dict(map(collect(J.aux.eqs)) do (v, eq)
     new_eq = IntDisjointSets(nparts(J.model, v))
     for eqset in collect.(eq_sets(eq; remove_singles=true))
       eq1, eqrest... = eqset
@@ -107,7 +103,7 @@ TODO: do this incrementally based on change data
 TODO this assumes that each object is the apex of at most one (co)cone.
 """
 function update_frozen!(S::Sketch,J::SketchModel,m, ch::Change, queued::Addition)
-  fobs, fhoms = J.frozen
+  fobs, fhoms = J.aux.frozen
   chng = false
   is_iso(x) = is_injective(ch.l[x]) && is_surjective(ch.l[x])
   is_isoq(x) = is_injective(queued.l[x]) && is_surjective(queued.l[x])
@@ -124,13 +120,13 @@ function update_frozen!(S::Sketch,J::SketchModel,m, ch::Change, queued::Addition
       end
     end
   end
-  for (c,(cdata,cdict)) in zip(S.cocones,J.cocones)
+  for (c,(cdata,cdict)) in zip(S.cocones,J.aux.cocones)
     if c.apex ∉ fobs && all(v->v∈fobs, vlabel(c.d)) && all(e->e∈fhoms, elabel(c.d)) && all(
       l->is_total(S,J,l), unique(last.(c.legs))) && is_iso(c.apex)
       push!(fobs, c.apex); chng |= true # do we need to check that cdict isn't missing something?
     end
   end
-  J.frozen = fobs => fhoms
+  J.aux.frozen = fobs => fhoms
   if chng update_frozen!(S,J,m,ch, queued) end
 end
 
