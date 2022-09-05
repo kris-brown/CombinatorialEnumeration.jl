@@ -1,4 +1,5 @@
 using Test
+using CombinatorialEnumeration
 
 @testset "Sketches" begin
   include("Sketches.jl")
@@ -20,9 +21,9 @@ end
   include("ModEnum.jl")
 end
 
-for ex in filter(f->f[end-2:end]==".jl",readdir("data"))
+for ex in filter(f->f[end-2:end]==".jl",readdir("$(pkgdir(CombinatorialEnumeration))/data"))
   @testset "$ex" begin
     println("$ex")
-    include(joinpath(@__DIR__, "../data/$ex")).runtests()
+    include(joinpath(@__DIR__, "$(pkgdir(CombinatorialEnumeration))/data/$ex")).runtests()
   end
 end
