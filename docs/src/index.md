@@ -33,11 +33,8 @@ Sketch-constraint solving is like a subset of general constraint programming bec
 ### Aside: Notes on categories of sketch models
 From "Toposes, Triples and Theories" (Barr and Wells)
 
-- Theorem 4.3: Every FP-theory has an extension to an LE-theory which has the
-same models in any LE-category.
-- Theorem 4.4 : The
-category of set-valued models of a left exact theory has arbitrary limits and
-all filtered colimits; moreover, these are preserved by the set-valued functors
+- Theorem 4.3: Every FP-theory has an extension to an LE-theory which has the same models in any LE-category.
+- Theorem 4.4 : The category of set-valued models of a left exact theory has arbitrary limits and all filtered colimits; moreover, these are preserved by the set-valued functors
 of evaluation at the objects of the theory.
 - Theorem 4.1: (outlines which kinds of sketches have which kinds of (co)limits)
 

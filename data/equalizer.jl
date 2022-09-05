@@ -1,6 +1,6 @@
 module Equalizer
 
-using Revise
+# using Revise
 using Test
 using Catlab.Present, Catlab.CategoricalAlgebra, Catlab.Theories
 using CombinatorialEnumeration

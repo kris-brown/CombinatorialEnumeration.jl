@@ -1,3 +1,4 @@
 [deps]
-Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+CSetAutomorphisms = "1602be87-98d2-44e8-83ad-5679ea8c0714"
 CombinatorialEnumeration = "fc1462b8-e790-43d8-8e6e-8820fe0073d6"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
