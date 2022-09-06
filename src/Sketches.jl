@@ -26,14 +26,14 @@ outneighbors(g::T, v::Int) where {T<:AbstractReflexiveGraph} =
 
 
 """A finitely presented category (with designated id edges)"""
-@present TheoryLabeledGraph <: SchReflexiveGraph begin
+@present SchLabeledGraph <: SchReflexiveGraph begin
   Label::AttrType
   vlabel::Attr(V,Label)
   elabel::Attr(E,Label)
 end;
 
 @acset_type LabeledGraph_(
-  TheoryLabeledGraph, index=[:src,:tgt,:vlabel,:elabel]
+  SchLabeledGraph, index=[:src,:tgt,:vlabel,:elabel]
 ) <: AbstractReflexiveGraph
 
 const LabeledGraph = LabeledGraph_{Symbol}

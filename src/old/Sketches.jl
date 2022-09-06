@@ -28,14 +28,14 @@ outneighbors(g::T, v::Int) where {T<:AbstractReflexiveGraph} =
 
 
 """Edges and vertices labeled by symbols"""
-@present TheoryLabeledGraph <: TheoryReflexiveGraph begin
+@present SchLabeledGraph <: TheoryReflexiveGraph begin
   Label::AttrType
   vlabel::Attr(V,Label)
   elabel::Attr(E,Label)
 end;
 
 @acset_type LabeledGraph_(
-  TheoryLabeledGraph,
+  SchLabeledGraph,
   index=[:src,:tgt,:vlabel, :elabel]
 ) <: AbstractReflexiveGraph
 
