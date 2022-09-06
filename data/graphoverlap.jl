@@ -3,7 +3,6 @@ module GraphOverlap
 # using Revise
 using Test
 using Catlab.CategoricalAlgebra, Catlab.Graphics, Catlab.Present, Catlab.Graphs
-using Catlab.Graphics
 using CombinatorialEnumeration
 using CombinatorialEnumeration.Models: is_surjective
 using DataStructures
@@ -44,6 +43,8 @@ end
   (s₃,t₃)::Hom(E₃,V₃)
 end
 @acset_type R(SchRes)
+
+# View the schema here
 # to_graphviz(schema;node_labels=:vlabel,edge_labels=:elabel)
 
 """PB is a pullback: all pairs of A+B that agree on their value in c"""

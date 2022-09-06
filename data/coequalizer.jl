@@ -2,9 +2,8 @@ module Coequalizer
 
 # using Revise
 using Test
-using Catlab.Present, Catlab.CategoricalAlgebra, Catlab.Theories
+using Catlab.CategoricalAlgebra
 using CombinatorialEnumeration
-using CSetAutomorphisms
 
 include(joinpath(@__DIR__, "equalizer.jl"))
 

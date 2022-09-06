@@ -15,9 +15,8 @@ This could be reimplemented if needed.
 using ..Sketches
 using ..Models
 
-using Catlab.CategoricalAlgebra, Catlab.Present
+using Catlab.CategoricalAlgebra
 using CSetAutomorphisms
-using DataStructures
 
 
 #############################

@@ -2,9 +2,8 @@ module Equalizer
 
 # using Revise
 using Test
-using Catlab.Present, Catlab.CategoricalAlgebra, Catlab.Theories
+using Catlab.CategoricalAlgebra
 using CombinatorialEnumeration
-using CSetAutomorphisms
 
 
 eqschema = @acset LabeledGraph begin
