@@ -6,13 +6,16 @@ using ..Models
 using ..DB
 using ..Propagate
 using ..Models: eq_sets, is_total
-
+using ..DB: cached_nauty
 using Catlab.CategoricalAlgebra, Catlab.Theories
 using CSetAutomorphisms
 
 using Test
 using Combinatorics
 
+import Base: hash
+
+Base.hash(x::StructACSet) = hash(string(x))
 
 """
 Add, then apply merges (while accumulating future adds to make) until fixpoint
@@ -223,9 +226,11 @@ end
 We can reason what are the models that should come out, but not which order
 they are in, so we make sure canonical hashes match up.
 """
-function test_models(db::EnumState, S::Sketch, expected; f=identity, include_one=false)
-  Set(call_nauty(e).hsh for e in expected) == Set(
-      call_nauty(f(get_model(db,S,m))).hsh for m in db.models if include_one || m > 1)
+function test_models(db::EnumState, S::Sketch, expected; f=nothing, include_one=false)
+  m_inds = [m for m in db.models if include_one || m > 1]
+  mods = [isnothing(f) ? db.pk[m] : cached_nauty(f(get_model(db,S,m)))
+          for m in ms]
+  Set(cached_nauty(e) for e in expected) == Set(mods)
 end
 
 end # module

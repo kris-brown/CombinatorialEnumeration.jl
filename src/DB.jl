@@ -3,6 +3,7 @@ export init_db, init_premodel, add_premodel, get_model, EnumState, Prop,
        MergeEdge,AddEdge, Init, Branch
 import ..Sketches: show_lg
 
+
 """
 Interact an in-memory datastore
 
@@ -18,6 +19,7 @@ using ..Models
 using Catlab.CategoricalAlgebra, Catlab.Present
 using CSetAutomorphisms
 using DataStructures
+using LRUCache
 
 
 #############################
@@ -88,18 +90,27 @@ Base.length(es::EnumState) = length(es.premodels)
 Base.getindex(es::EnumState, i::Int) = es.premodels[i]
 Base.getindex(es::EnumState, i::String) = es.premodels[findfirst(==(i), es.pk)]
 
+const lru = LRU{StructACSet, String}(maxsize=100)
+
+function cached_nauty(x::StructACSet)
+  get!(lru, x) do
+    call_nauty(x).hsh
+  end
+end
+
+
 function add_premodel(es::EnumState, S::Sketch, J::SketchModel;
                       parent::Union{Nothing,Pair{Int,E}}=nothing)::Int where {E <: EdgeChange}
 
-  naut = call_nauty(J.model)
+  chash = cached_nauty(J.model)
 
-  found = findfirst(==(naut.hsh), es.pk)
+  found = findfirst(==(chash), es.pk)
   if !isnothing(found)
     new_v = found
   else
     push!(es.premodels, J)
     push!(es.prop, nothing)
-    push!(es.pk, naut.hsh)
+    push!(es.pk, chash)
     new_v = add_part!(es.grph, :V; vlabel=Symbol(string(length(es.pk))))
   end
 
