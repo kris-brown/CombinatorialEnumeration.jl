@@ -1,8 +1,8 @@
 module DB
-export init_db, init_premodel, add_premodel, get_model, EnumState, Prop,
+export init_db, add_premodel, init_premodel, get_model, EnumState, Prop,
        MergeEdge,AddEdge, Init, Branch
 import ..Sketches: show_lg
-
+using DataStructures
 """
 Interact an in-memory datastore
 
@@ -123,7 +123,9 @@ function init_premodel(es::EnumState, S::Sketch, ch::StructACSet, freeze=Symbol[
   ad = Addition(S, J, homomorphism(J.model,ch;monic=true), id(J.model))
   m = exec_change(S, J.model, ad)
   J.model = codom(m)
-  J.aux.frozen = (J.aux.frozen[1] ∪ freeze) => J.aux.frozen[2]
+  J.aux.eqs = Dict(o=>IntDisjointSets(nparts(J.model, o)) for o in vlabel(S))
+  freeze_homs = [e for e in elabel(S) if src(S,e) ∈ freeze && nparts(J.model,e)==nparts(J.model, src(S,e))]
+  J.aux.frozen = (J.aux.frozen[1] ∪ freeze) => (J.aux.frozen[2] ∪ freeze_homs)
   add_premodel(es, S, J; parent=i=>Init(ad,m))
   return es
 end

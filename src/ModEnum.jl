@@ -1,10 +1,10 @@
 module ModEnum
-export chase_db, test_models, init_db
+export chase_db, test_models
 
 using ..Sketches
 using ..Models
 using ..DB
-using ..Propagate
+using ..Propagate: propagate!, update_frozen!
 using ..Models: eq_sets, is_total
 
 using Catlab.CategoricalAlgebra, Catlab.Theories
@@ -12,6 +12,7 @@ using CSetAutomorphisms
 
 using Test
 using Combinatorics
+using DataStructures
 
 
 """
@@ -121,17 +122,17 @@ end
 # """
 # Pick a premodel and apply all branches, storing result back in the db.
 # Return the premodel ids that result. Return nothing if already fired.
-
-# Optionally force branching on a particular FK.
 # """
 function chase_db_step!(S::Sketch, es::EnumState, e::Int)
   verbose = false
   change = false
   s, t = src(es.grph, e), tgt(es.grph, e)
+  # only touch vertices with no outgoing arrows
   if isempty(incident(es.grph, t, :src))
+    # but ignore failed or completed premodels
     if t ∉ es.fail ∪ es.models
-      change |= true
-      if isnothing(es.prop[t])
+      change |= true # we are going to do *something*
+      if isnothing(es.prop[t]) # if we have not propagated yet
         if verbose println("propagating target $t") end
         try
           prop(es,S,e, es.ms[e])

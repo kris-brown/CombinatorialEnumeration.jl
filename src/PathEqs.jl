@@ -13,15 +13,23 @@ function update_patheqs!(S::Sketch, J::SketchModel,f::CSetTransformation)
   verbose = false
   ntriv(v) = nv(S.eqs[v]) > 1
   if verbose println("updating path eqs w/ frozen obs $(J.aux.frozen[1])
-  \nold path eqs", J.aux.path_eqs[:I]) end
+  \nold path eqs", J.aux.path_eqs[:O]) end
   new_peqs = EQ(map(vlabel(S)) do v
     if verbose && ntriv(v) println("\tv $v") end
     return v => map(parts(J.model, v)) do p
       preim = preimage(f[v], p)
       if verbose && ntriv(v) println("\t\tp $p preim $preim") end
       if length(preim) == 0 # we have a new element
-        res = Union{Nothing,Vector{Int}}[vv ∈ J.aux.frozen[1] ? sort(collect(eq_reps(J.aux.eqs[vv]))) : nothing
-               for vv in vlabel(S.eqs[v])]
+        vivv = collect(enumerate(vlabel(S.eqs[v])))
+        res = Vector{Union{Nothing,Vector{Int}}}(map(vivv) do (vi, vv)
+          if any(==(add_id(v)), S.eqs[v][incident(S.eqs[v], vi, :tgt), :elabel])
+            return Int[p]
+          elseif vv ∈ J.aux.frozen[1]
+            return sort(collect(eq_reps(J.aux.eqs[vv])))
+          else
+            return nothing
+          end
+        end)
         res[1] = [p]
         return res
       elseif length(preim) == 1
@@ -51,6 +59,7 @@ function update_patheqs!(S::Sketch, J::SketchModel,f::CSetTransformation)
       end
     end
   end)
+  if verbose println("new path eqs $new_peqs") end
   J.aux.path_eqs = new_peqs
 end
 
@@ -59,35 +68,39 @@ Use set of path equalities starting from the same vertex to possibly resolve
 some foreign key values.
 """
 propagate_patheqs!(S::Sketch, J::SketchModel,f::CSetTransformation, c::Change) =
-  vcat(Vector{Change}[propagate_patheq!(S, J, f, c, v) for v in vlabel(S)]...)
+  vcat(Vector{Change}[propagate_patheq!(S, J,f, v, Set(vlabel(S))) for v in vlabel(S)]...)
+# vcat(Vector{Change}[propagate_patheq!(S, J, f, c, v) for v in vlabel(S)]...)
+
 
 """
 If we add an element, this can add possibilities.
 If we add a relation, this can constrain the possible values.
 """
-function propagate_patheq!(S::Sketch, J::SketchModel,f::CSetTransformation, c::Change, v::Symbol)::Vector{Change}
-  if ne(S.eqs[v]) == 0 return Change[] end
-  verbose = false
-  res = Change[]
-  to_check = Set{Symbol}()
+# function propagate_patheq!(S::Sketch, J::SketchModel,f::CSetTransformation, c::Change, v::Symbol)::Vector{Change}
+#   if ne(S.eqs[v]) == 0 return Change[] end
+#   verbose = true
+#   res = Change[]
+#   to_check = Set{Symbol}()
+#   ids =  S.schema[refl(S.schema),:elabel]
+#   # ADDING OBJECTS
+#   for av in unique(vlabel(S.eqs[v]))
+#     if any(p->length(preimage(f[av], p)) != 1, parts(J.model, av))
+#       push!(to_check, v)
+#     end
+#   end
 
-  # ADDING OBJECTS
-  for av in unique(vlabel(S.eqs[v]))
-    if any(p->length(preimage(f[av], p)) != 1, parts(J.model, av))
-      push!(to_check, v)
-    end
-  end
+#   # Adding edges
+#   for (e, srctab, tgttab) in Set(elabel(S.eqs[v], true))
+#     if e ∉ ids
+#       if nparts(codom(c.l), e) > 0
+#         union!(to_check, [srctab, tgttab])
+#       end
+#     end
+#   end
+#   if verbose && !isempty(to_check) println("$v: tables to check for updates: $v: $to_check") end
 
-  # Adding edges
-  for (e, srctab, tgttab) in Set(elabel(S.eqs[v], true))
-    if nparts(codom(c.l), e) > 0
-      union!(to_check, [srctab, tgttab])
-    end
-  end
-  if verbose && !isempty(to_check) println("tables to check for updates: $v: $to_check") end
-
-  return propagate_patheq!(S, J,f, v, to_check)
-end
+#   return propagate_patheq!(S, J,f, v, to_check)
+# end
 
 
 """
@@ -143,7 +156,7 @@ function propagate_patheq!(S::Sketch, J::SketchModel, m, v::Symbol, tabs::Set{Sy
               if verbose > 1 println("restricting dom to $(poss[s])∩$preim") end
               push!(tabs, Stab)
               intersect!(poss[s], preim)
-              if isempty(poss[s]) throw(ModelExcecption()) end
+              if isempty(poss[s]) throw(ModelException("Empty poss for $v eqs: poss $poss")) end
             end
           end
         end

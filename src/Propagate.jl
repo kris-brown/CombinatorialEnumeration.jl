@@ -46,7 +46,7 @@ function propagate!(S::Sketch, J::SketchModel{Sc},
 
   update_eqs!(J,m)
   if verbose println("\t\told frozen $(J.aux.frozen)") end
-  update_frozen!(S,J,m,c,queued)
+  new_obs, new_homs = update_frozen!(S,J,m,c,queued)
   if verbose println("\t\tnew frozen $(J.aux.frozen)") end
   update_patheqs!(S, J, m)
   update_cocones!(S, J, m, c)
@@ -104,11 +104,14 @@ TODO this assumes that each object is the apex of at most one (co)cone.
 """
 function update_frozen!(S::Sketch,J::SketchModel,m, ch::Change, queued::Addition)
   fobs, fhoms = J.aux.frozen
+  orig_fobs, orig_fhoms = deepcopy(J.aux.frozen)
   chng = false
+  verbose = false
   is_iso(x) = is_injective(ch.l[x]) && is_surjective(ch.l[x])
   is_isoq(x) = is_injective(queued.l[x]) && is_surjective(queued.l[x])
   for e in elabel(S)
     if src(S,e) ∈ fobs && is_total(S,J,e) && e ∉ fhoms && is_isoq(e)
+      if verbose println("adding $e") end
       push!(fhoms,e); chng |= true
     end
   end
@@ -116,6 +119,7 @@ function update_frozen!(S::Sketch,J::SketchModel,m, ch::Change, queued::Addition
     if c.apex ∉ fobs && all(v->v∈fobs, vlabel(c.d)) && all(e->e∈fhoms, elabel(c.d)) && all(
       l->is_total(S,J,l), unique(last.(c.legs))) && is_iso(c.apex) && all(is_iso, vcat(vlabel(c), elabel(c)))
       if all(is_iso, [c.apex,last.(c.legs)...])
+        if verbose println("adding $(c.apex)") end
         push!(fobs, c.apex); chng |= true
       end
     end
@@ -128,6 +132,7 @@ function update_frozen!(S::Sketch,J::SketchModel,m, ch::Change, queued::Addition
   end
   J.aux.frozen = fobs => fhoms
   if chng update_frozen!(S,J,m,ch, queued) end
+  return setdiff(J.aux.frozen[1],orig_fobs) => setdiff(J.aux.frozen[2],orig_fhoms)
 end
 
 
