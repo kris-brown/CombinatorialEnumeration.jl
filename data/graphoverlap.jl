@@ -95,7 +95,7 @@ hom_eqs = vcat(map([:f => Symbol("₁"), :g => Symbol("₂")]) do (f,i)
 end...)
 eqs = vcat(ve_eqs, hom_eqs)
 
-S = Sketch(:Overlap, schema, cones=[cs...,injs...], cocones=[ccs...,a_bs...], eqs=eqs)
+S = Sketch(schema, cones=[cs...,injs...], cocones=[ccs...,a_bs...], eqs=eqs)
 
 # Example of 3 path equations starting from E₁
 to_graphviz(S.eqs[:E₁]; node_labels=:vlabel, edge_labels=:elabel)

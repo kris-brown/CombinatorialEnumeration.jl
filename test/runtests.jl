@@ -21,7 +21,12 @@ end
   include("ModEnum.jl")
 end
 
-for ex in filter(f->f[end-2:end]==".jl",readdir("$(pkgdir(CombinatorialEnumeration))/data"))
+# @testset "SketchColimits" begin
+#   include("SketchColimits.jl")
+# end
+
+for ex in filter(f->f[end-2:end]==".jl",
+                 readdir("$(pkgdir(CombinatorialEnumeration))/data"))
   @testset "$ex" begin
     println("$ex")
     include(joinpath(@__DIR__, "$(pkgdir(CombinatorialEnumeration))/data/$ex")).runtests()

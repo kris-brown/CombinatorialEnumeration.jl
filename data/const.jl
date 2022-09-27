@@ -14,7 +14,7 @@ constschema = @acset LabeledGraph begin
   V = 2; E = 2; vlabel = [:I, :A]; elabel = [:f, :g]; src = 1; tgt = 2
 end
 
-S = Sketch(:const, constschema, cones=[Cone(:I)])
+S = Sketch(constschema, cones=[Cone(:I)])
 
 function runtests()
   I = @acset S.cset begin A=3 end

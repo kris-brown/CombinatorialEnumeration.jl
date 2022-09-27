@@ -16,7 +16,7 @@ eqconed = @acset LabeledGraph begin
   V=3; E=2; vlabel=[:A,:A,:B]; elabel=[:f,:g]; src=[1,2]; tgt=[3,3]
 end
 
-S = Sketch(:Equalizer, eqschema, cones=[Cone(eqconed, :E, [1=>:e,2=>:e])]);
+S = Sketch(eqschema, cones=[Cone(eqconed, :E, [1=>:e,2=>:e])]);
 
 function runtests()
   I = @acset S.cset begin A=2;B=2 end

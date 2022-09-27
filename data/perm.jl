@@ -17,7 +17,7 @@ permschema = @acset LabeledGraph begin
     tgt = [1,1]
 end
 
-S = Sketch(:perm, permschema, eqs=[[[:f, :f⁻¹],Symbol[]]])
+S = Sketch(permschema, eqs=[[[:f, :f⁻¹],Symbol[]]])
 
 function runtests()
     I = @acset S.cset begin X=3 end

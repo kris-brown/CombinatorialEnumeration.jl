@@ -18,7 +18,7 @@ end
 a_a = Cone(@acset(LabeledGraph, begin V=2; vlabel=[:A,:A] end),
            :A_A, [1=>:iA,2=>:iB])
 
-S = Sketch(:Coprod, schema, cocones=[a_a,])
+S = Sketch(schema, cocones=[a_a,])
 
 function runtests()
   I = @acset S.cset begin A=3 end

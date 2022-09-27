@@ -84,7 +84,7 @@ cat_eqs = [
   [[:id_refltgt,:cmp], [add_id(:A)]],
 ]
 
-S = Sketch(:Cat, cat_schema, cones=[cmpcone, asccone], eqs=cat_eqs);
+S = Sketch(cat_schema, cones=[cmpcone, asccone], eqs=cat_eqs);
 
 @present ThCat(FreeSchema) begin
   (O,A,Cmp)::Ob

@@ -30,7 +30,7 @@ fgschema = @acset LabeledGraph begin
   tgt    = [2,  1,  2]
 end
 
-S = Sketch(:FG, fgschema; eqs=[
+S = Sketch(fgschema; eqs=[
   [[:f, :g],   Symbol[]],
   [[:inv,:inv],Symbol[]]])
 

@@ -35,7 +35,7 @@ a_b = Cone(@acset(LabeledGraph, begin V=2;vlabel=[:A,:B] end),
            :A_B, [1=>:iA,2=>:iB])
 
 eqs = [[[:f],[:iA,:c]],[[:g],[:iB,:c]]]
-S = Sketch(:JointSurj, schema, cones=[c], cocones=[cc,a_b,],eqs=eqs)
+S = Sketch(schema, cones=[c], cocones=[cc,a_b,],eqs=eqs)
 
 function runtests()
   I = @acset S.cset begin A=2;B=2;C=2 end

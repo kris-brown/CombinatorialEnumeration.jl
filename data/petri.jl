@@ -16,7 +16,7 @@ petschema = @acset LabeledGraph begin
   src= [3,3,4,4]; tgt= [1,2,1,2]
 end
 
-S = Sketch(:Petr, petschema)
+S = Sketch(petschema)
 
 #########
 # Tests #

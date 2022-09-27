@@ -7,7 +7,7 @@ using CombinatorialEnumeration
 
 include(joinpath(@__DIR__, "equalizer.jl"))
 
-S = dual(Equalizer.S, :Coequalizer, [:E=>:C, :e=>:c])
+S = dual(Equalizer.S, [:E=>:C, :e=>:c])
 
 function runtests()
 
