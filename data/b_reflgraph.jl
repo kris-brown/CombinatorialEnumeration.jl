@@ -17,7 +17,7 @@ schema = @acset LabeledGraph begin
 end
 
 
-S = Sketch(:reflgraph, schema, eqs=[[[:refl, :src], Symbol[]], [[:refl, :tgt], Symbol[]]])
+S = Sketch(schema, eqs=[[[:refl, :src], Symbol[]], [[:refl, :tgt], Symbol[]]])
 
 function runtests()
     I = @acset S.cset begin V=2; E=3 end

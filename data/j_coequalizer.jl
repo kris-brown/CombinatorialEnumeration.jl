@@ -5,7 +5,7 @@ using Test
 using Catlab.CategoricalAlgebra
 using CombinatorialEnumeration
 
-include(joinpath(@__DIR__, "equalizer.jl"))
+include(joinpath(@__DIR__, "i_equalizer.jl"))
 
 S = dual(Equalizer.S, [:E=>:C, :e=>:c])
 

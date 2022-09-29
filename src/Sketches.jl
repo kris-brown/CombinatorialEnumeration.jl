@@ -41,6 +41,8 @@ const LabeledGraph = LabeledGraph_{Symbol}
 show_lg(x::LabeledGraph) = to_graphviz(x; node_labels=:vlabel, edge_labels=:elabel)
 
 add_id(x::Symbol) = Symbol("id_$x")
+rem_id(x::String) = x[4:end] # assumes add_id(x::Symbol) = "id_$x"
+
 function add_id!(G::LabeledGraph)
   for v in vertices(G)
     if G[v, :refl] == 0
@@ -49,6 +51,12 @@ function add_id!(G::LabeledGraph)
     end
   end
   return G
+end
+
+function rem_id(G::LabeledGraph)
+  newG = LabeledGraph()
+  copy_parts!(newG, G; V=vertices(G), E=non_id(G))
+  return newG
 end
 
 src(G::LabeledGraph, f::Symbol) = G[only(incident(G, f, :elabel)), :src]
@@ -185,7 +193,7 @@ function eqs_to_diagrams(schema::LabeledGraph, eqs)
 end
 
 function diagram_to_eqs(g::LabeledGraph)
-  map(filter(x->length(x)>1, collect(values(enum_paths(g))))) do ps
+  map(filter(x->length(x)>1, collect(values(enum_paths(rem_id(g)))))) do ps
     [g[p,:elabel] for p in ps]
   end
 end
@@ -344,7 +352,7 @@ function check_cone(schema::LabeledGraph, c::Cone)::Nothing
     schema[:vlabel][schema[:tgt][edge]] == c.d[:vlabel][v] || error(
       "Leg $l -> $v does not go to correct vertex $c")
     is_homomorphic(c.d, schema) || error(
-      "Cone diagram does not map into schema $c")
+      "Cone diagram does not map into schema $c \n\n$(schema)")
   end
 end
 
@@ -392,8 +400,7 @@ hom_in(S::Sketch, t::Vector{Symbol}) = vcat([hom_in(S,x) for x in t]...)
 hom_out(S::Sketch, t::Vector{Symbol}) = vcat([hom_out(S,x) for x in t]...)
 
 """Dual sketch. Optionally rename obs/morphisms and the sketch itself"""
-function dual(s::Sketch, n::Symbol=Symbol(),
-     obs::Vector{Pair{Symbol, Symbol}}=Pair{Symbol, Symbol}[])
+function dual(s::Sketch,obs::Vector{Pair{Symbol,Symbol}}=Pair{Symbol,Symbol}[])
   d = Dict(obs)
   eqsub = ps -> reverse([get(d, p, p) for p in ps])
   dschema = dualgraph(s.schema, d)

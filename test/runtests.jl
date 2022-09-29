@@ -21,11 +21,12 @@ end
   include("ModEnum.jl")
 end
 
-# @testset "SketchColimits" begin
-#   include("SketchColimits.jl")
-# end
+@testset "SketchColimits" begin
+  include("SketchColimits.jl")
+end
 
-for ex in filter(f->f[end-2:end]==".jl",
+# to start the tests at a later one, change the "a" to another letter
+for ex in filter(f->f[end-2:end]==".jl" && f > "a",
                  readdir("$(pkgdir(CombinatorialEnumeration))/data"))
   @testset "$ex" begin
     println("$ex")

@@ -48,7 +48,7 @@ semieqs = [
 
   [[idk, :k], [kid,:k]], # assoc
 ]
-S = Sketch(:semig, semig_schema, cones=[paircone, tripcone], eqs=semieqs);
+S = Sketch(semig_schema, cones=[paircone, tripcone], eqs=semieqs);
 
 function binfuns(i::Int)::Vector{Matrix{Int}}
   res = Matrix{Int}[]

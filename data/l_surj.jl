@@ -25,7 +25,7 @@ c = Cone(@acset(LabeledGraph, begin V=3;E=2;vlabel=[:A,:A,:B];
 cc = Cone(@acset(LabeledGraph, begin V=2;E=2;vlabel=[:C,:A];
           elabel=[:d0, :d1]; src=1; tgt=2 end), :B, [2=>:d])
 
-S = Sketch(:Surj, schema, cones=[c], cocones=[cc])
+S = Sketch(schema, cones=[c], cocones=[cc])
 
 function runtests()
   I = @acset S.cset begin A=1;B=2 end # not possible to have surj

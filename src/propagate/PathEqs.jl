@@ -12,8 +12,7 @@ function update_patheqs!(S::Sketch, J::SketchModel,f::CSetTransformation)
   μ = Dict(v=>[find_root!(J.aux.eqs[v],f[v](i)) for i in parts(dom(f), v)] for v in vlabel(S))
   verbose = false
   ntriv(v) = nv(S.eqs[v]) > 1
-  if verbose println("updating path eqs w/ frozen obs $(J.aux.frozen[1])
-  \nold path eqs", J.aux.path_eqs[:O]) end
+  if verbose println("updating path eqs w/ frozen obs $(J.aux.frozen[1])") end
   new_peqs = EQ(map(vlabel(S)) do v
     if verbose && ntriv(v) println("\tv $v") end
     return v => map(parts(J.model, v)) do p
@@ -22,7 +21,7 @@ function update_patheqs!(S::Sketch, J::SketchModel,f::CSetTransformation)
       if length(preim) == 0 # we have a new element
         vivv = collect(enumerate(vlabel(S.eqs[v])))
         res = Vector{Union{Nothing,Vector{Int}}}(map(vivv) do (vi, vv)
-          if any(==(add_id(v)), S.eqs[v][incident(S.eqs[v], vi, :tgt), :elabel])
+          if any(==(add_id(v)), S.eqs[v][setdiff(incident(S.eqs[v], vi, :tgt),S.eqs[v][:refl]), :elabel])
             return Int[p]
           elseif vv ∈ J.aux.frozen[1]
             return sort(collect(eq_reps(J.aux.eqs[vv])))
@@ -60,6 +59,7 @@ function update_patheqs!(S::Sketch, J::SketchModel,f::CSetTransformation)
     end
   end)
   if verbose println("new path eqs $new_peqs") end
+
   J.aux.path_eqs = new_peqs
 end
 
@@ -69,38 +69,14 @@ some foreign key values.
 """
 propagate_patheqs!(S::Sketch, J::SketchModel,f::CSetTransformation, c::Change) =
   vcat(Vector{Change}[propagate_patheq!(S, J,f, v, Set(vlabel(S))) for v in vlabel(S)]...)
-# vcat(Vector{Change}[propagate_patheq!(S, J, f, c, v) for v in vlabel(S)]...)
 
 
 """
 If we add an element, this can add possibilities.
 If we add a relation, this can constrain the possible values.
 """
-# function propagate_patheq!(S::Sketch, J::SketchModel,f::CSetTransformation, c::Change, v::Symbol)::Vector{Change}
-#   if ne(S.eqs[v]) == 0 return Change[] end
-#   verbose = true
-#   res = Change[]
-#   to_check = Set{Symbol}()
-#   ids =  S.schema[refl(S.schema),:elabel]
-#   # ADDING OBJECTS
-#   for av in unique(vlabel(S.eqs[v]))
-#     if any(p->length(preimage(f[av], p)) != 1, parts(J.model, av))
-#       push!(to_check, v)
-#     end
-#   end
-
-#   # Adding edges
-#   for (e, srctab, tgttab) in Set(elabel(S.eqs[v], true))
-#     if e ∉ ids
-#       if nparts(codom(c.l), e) > 0
-#         union!(to_check, [srctab, tgttab])
-#       end
-#     end
-#   end
-#   if verbose && !isempty(to_check) println("$v: tables to check for updates: $v: $to_check") end
-
-#   return propagate_patheq!(S, J,f, v, to_check)
-# end
+# function propagate_patheq!(S::Sketch, J::SketchModel,f::CSetTransformation,
+#                            c::Change, v::Symbol)::Vector{Change}
 
 
 """
@@ -118,7 +94,11 @@ function propagate_patheq!(S::Sketch, J::SketchModel, m, v::Symbol, tabs::Set{Sy
   G = S.eqs[v]
   fo, fh = J.aux.frozen
   verbose = 0 * (nv(S.eqs[v]) > 1 ? 1 : 0)
-  if verbose > 1 println("prop patheq of $v (initial changed tabs: $tabs) w/ $(J.aux.path_eqs[v])") end
+
+  if verbose > 1
+    println("prop patheq of $v (initial changed tabs: $tabs) w/ $(J.aux.path_eqs[v])")
+    show(stdout, "text/plain", first(crel_to_cset(S, J.model)))
+  end
   while !isempty(tabs)
     tab = pop!(tabs)
     hs = union(Set.([hom_in(S, tab), hom_out(S, tab)])...)
@@ -140,12 +120,13 @@ function propagate_patheq!(S::Sketch, J::SketchModel, m, v::Symbol, tabs::Set{Sy
           # every element in the image of f
           im = [p for p in parts(J.model, Ttab) if find_root!(Teq, p) ∈ im_eqs]
           # restrict possibilities of codom to image of f
-          for poss in J.aux.path_eqs[v]
+          for (poss_root, poss) in enumerate(J.aux.path_eqs[v])
             if !isnothing(poss[t]) && poss[t] ⊈ im
               push!(tabs, Ttab)
-              if verbose > 1 println("\treducing codom to $(poss[t])∩$im") end
+              if verbose > 1 println("\t\t$tab#$poss_root: reducing codom of $f(#$f_i) to $(poss[t])∩$im (poss: $poss)") end
               intersect!(poss[t], im)
-              if isempty(poss[t]) throw(ModelException("Path eq imposs")) end
+              msg = "Path eq imposs in tab $tab#$poss_root: reducing codom $f(#$f_i) to $(poss[t])∩$im \n poss: $(poss)"
+              if isempty(poss[t]) throw(ModelException(msg)) end
             end
           end
           # restrict possibilities of dom to preimage of possibilities
@@ -177,7 +158,7 @@ function propagate_patheq!(S::Sketch, J::SketchModel, m, v::Symbol, tabs::Set{Sy
 
             # fk is set: we can reduce the possibilities of codom to one
             elseif !isnothing(out) && poss[t] != [out] # we can reduce the tgt to one thing
-              if verbose > 1 println("\t\t\twe can infer $f for root $(only(poss[1])) from $(only(poss[s])) to $Ttab ($(poss[t]))") end
+              if verbose > 1 println("\t\t\t$tab#$i we can infer $f from $(only(poss[s])) to $Ttab ($(poss[t]))") end
               if isnothing(poss[t]) || any(pt->in_same_set(J.aux.eqs[Ttab], out, pt), poss[t])
                 poss[t] = [out];
               else
@@ -190,5 +171,6 @@ function propagate_patheq!(S::Sketch, J::SketchModel, m, v::Symbol, tabs::Set{Sy
       end
     end
   end
+
   res
 end

@@ -14,7 +14,7 @@ end
 
 td = @acset LabeledGraph begin V = 3; vlabel = [:s, :s, :s,] end
 
-S = Sketch(:trips, tripschema, cones=[Cone(td, :s3, [1=>:p1,2=>:p2, 3=>:p3])])
+S = Sketch(tripschema, cones=[Cone(td, :s3, [1=>:p1,2=>:p2, 3=>:p3])])
 
 function runtests()
   I = @acset S.cset begin s=2 end

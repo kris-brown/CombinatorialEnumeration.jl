@@ -1,7 +1,7 @@
 module Category
 
 using Test
-using Catlab.CategoricalAlgebra, Catlab.Present, Catlab.Theories
+using Catlab.CategoricalAlgebra, Catlab.Present, Catlab.Theories, Catlab.Present
 using CombinatorialEnumeration
 
 """
@@ -146,7 +146,7 @@ function runtests()
   expected = [
     mk_cat(2,[1=>1]), # non id points 1->1.  Composed with itself is identity
     mk_cat(2,[1=>1],[(1,1,1)]),     # non id cmposed with itself is itself
-    mk_cat(2,[1=>2])     # non id points 1->2
+    mk_cat(2,[1=>2])  # non id points 1->2
   ]
 
   @test test_models(es,S,expected; f=Δ)
@@ -178,7 +178,6 @@ function runtests()
     monoid([1 2;2 1]) ⊕ mk_cat(1),
     monoid([1 1; 2 2]) ⊕ mk_cat(1), # non-commutative
     monoid([1 2 ;1 2 ]) ⊕ mk_cat(1), # non-commutative
-
   ]
 
   @test test_models(es,S,expected; f=Δ)
