@@ -43,6 +43,9 @@ end
 @testset "ReflGraph" begin
   include("examples/ReflGraph.jl")
 end
+@testset "SimpleUndirectedGraph" begin
+  include("examples/SimpleUndirectedGraph.jl")
+end
 @testset "Perm" begin
   include("examples/Perm.jl")
 end

@@ -165,47 +165,9 @@ schema = @acset LG begin
 end
 ```
 
-We then define all of the cones/cocones, which could be done with a lot of
-tedious boilerplate. Alternatively, we use `for` loops and a lot of hacking
-together `Strings` to do it somewhat concisely, at the expense of readability:
-
-```julia
-"""PB is a pullback: all pairs of A+B that agree on their value in c"""
-cs = map([:V=>:ᵥ,:E=>:ₑ]) do (x,y)
-  vlabel = Symbol.([fill("$(x)₁_$(x)₂",2)...,"$(x)₃"])
-  elabel = Symbol.(fill("f$(y)_g$y" ,2))
-  lgs    = [1=>Symbol("p$(y)₁"),2=>Symbol("p$(y)₂")]
-  g = @acset(LG, begin V=3;E=2; vlabel=vlabel; elabel=elabel;
-                                 src=[1,2]; tgt=3 end,)
-  Cone(g, Symbol("PB$y"), lgs)
-end
-
-"""(C,c) is the coequalizer of PB's legs"""
-ccs = map([:V=>:ᵥ,:E=>:ₑ]) do (x,y)
-  vlabel = Symbol.(["PB$y",fill("$(x)₁_$(x)₂", 2)...])
-  elabel = Symbol.(["p$(y)₁", "p$(y)₂"])
-  lgs    = [i=>Symbol("f$(y)_g$y") for i in [2,3]]
-  g = @acset(LG, begin V=3;E=2;vlabel=vlabel; elabel=elabel;
-                                 src=1; tgt=2 end)
-  Cone(g, Symbol("$(x)₃"), lgs)
-end
-
-"""A_B is the coproduct A+B"""
-a_bs = map([:V=>:ᵥ,:E=>:ₑ]) do (x,y)
-  vlabel = Symbol.(["$(x)₁", "$(x)₂"])
-  ap = Symbol("$(x)₁_$(x)₂")
-  lgs = [1=>Symbol("i$(y)₁"),2=>Symbol("i$(y)₂")]
-  Cone(@acset(LG, begin V=2;vlabel=vlabel end), ap, lgs)
-end
-
-"""Make a morphism injective"""
-mk_inj(s,t,f) = Cone(@acset(LG, begin V=3;E=2;vlabel=[s,s,t];
-          elabel=[f,f];src=[1,2]; tgt=3 end,), s, [1=>add_id(s),2=>add_id(s)])
-injs = [mk_inj(x...) for x in
-        [(:V₁,:V₃,:fᵥ),(:V₂,:V₃,:gᵥ),(:E₁,:E₃,:fₑ),(:E₂,:E₃,:gₑ)]]
-```
-
-There is also the specification of path equalities which we omit here.
+We then define all of the cones/cocones, which is done with many many lines of
+tedious boilerplate. There is also the specification of path equalities which
+we omit here.
 
 The above approach could be simplified if one has already implemented a [sketch
 for jointly surjective functions](https://github.com/kris-brown/CombinatorialEnumeration.jl/blob/main/src/examples/JointSurj.jl). Combined with

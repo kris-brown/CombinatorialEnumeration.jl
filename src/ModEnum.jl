@@ -92,7 +92,6 @@ function find_branch_fk(S::Sketch, J::SketchModel)::Union{Nothing, Pair{Symbol,I
     end
     return nothing
   end
-
   dangling = [score(fi[1])=>fi for fi in fs if !isnothing(fi)]
   return last(last(sort(dangling)))
 end

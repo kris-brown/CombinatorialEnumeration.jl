@@ -15,6 +15,7 @@ include(joinpath(@__DIR__, "TestSketch.jl"));
 @test hom_in(S,:A) == [:e,:z,:a]
 @test isempty(hom_set(S,:A,:A))
 @test dual(dual(S)) == S
+@test S.zero_obs == Set([:Z])
 @test sketch_from_json(to_json(S)) == S
 @test sizes(S,S.crel|>terminal|>apex) == "A: 1, B: 1, C: 1, E: 1, Z: 1, I: 1"
 

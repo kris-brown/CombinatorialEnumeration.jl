@@ -19,6 +19,7 @@ include(joinpath(@__DIR__, "JointSurj.jl"))
 include(joinpath(@__DIR__, "Const.jl"))
 include(joinpath(@__DIR__, "Petri.jl"))
 include(joinpath(@__DIR__, "ReflGraph.jl"))
+include(joinpath(@__DIR__, "SimpleUndirectedGraph.jl"))
 include(joinpath(@__DIR__, "Perm.jl"))
 include(joinpath(@__DIR__, "LeftInverse_Involution.jl"))
 include(joinpath(@__DIR__, "GraphOverlap.jl"))
@@ -43,6 +44,7 @@ include(joinpath(@__DIR__, "Category.jl"))
 @reexport using .ConstSketch
 @reexport using .PetriSketch
 @reexport using .ReflGraphSketch
+@reexport using .SimpleUndirectedGraphSketch
 @reexport using .PermSketch
 @reexport using .LeftInverse_InvolutionSketch
 @reexport using .GraphOverlapSketch

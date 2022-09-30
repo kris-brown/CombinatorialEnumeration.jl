@@ -117,22 +117,9 @@ function create_premodel(S::Sketch, n=Dict{Symbol, Int}(), freeze_obs=Symbol[]):
     else  n[o] = 1
     end
   end
-  # handle zero obs
-  zero_obs = Set([c.apex for c in S.cocones if nv(c.d)==0])
 
-  change = true
-  while change  # Maps into zero obs are zero obs
-    change = false
-    for z in zero_obs
-      for h in hom_in(S, z)
-        if src(S,h) ∉ zero_obs
-          push!(zero_obs, src(S,h)); change = true
-        end
-      end
-    end
-  end
 
-  for o in zero_obs
+  for o in S.zero_obs
     if haskey(n, o) n[o] == 0 || error("bad o $o n[o] $(n[o])")
     else  n[o] = 0
     end
@@ -141,8 +128,8 @@ function create_premodel(S::Sketch, n=Dict{Symbol, Int}(), freeze_obs=Symbol[]):
   for (k,v) in collect(n) add_parts!(J, k, v) end
 
   lim_obs = Set([c.apex for c in vcat(S.cones,S.cocones)])
-  freeze_obs = Set(freeze_obs ∪ one_obs ∪ zero_obs)
-  freeze_arrs = Set{Symbol}([hom_out(S,collect(zero_obs))...,add_id.(vlabel(S))...])
+  freeze_obs = Set(freeze_obs ∪ one_obs ∪ S.zero_obs)
+  freeze_arrs = Set{Symbol}([hom_out(S,collect(S.zero_obs))...,add_id.(vlabel(S))...])
 
   eqs = Dict([o=>IntDisjointSets(nparts(J, o)) for o in vlabel(S)])
   cocones = Vector{Pair{IntDisjointSets{Int}, Vector{Tuple{Symbol,Int,Int}}}}(
@@ -277,6 +264,8 @@ struct Addition{S} <: Change{S}
                     r::ACSetTransformation{Sc}) where Sc
     dom(l)==dom(r) || error("addition must be a span")
     codom(r) == J.model || error("addition doesn't match")
+    all(z->nparts(codom(l), z)==0, S.zero_obs) || throw(ModelException(
+        "adding zero obs $(codom(l))"))
 
     map(collect(union(J.aux.frozen...) ∩ (vlabel(S)∪elabel(S)))) do s
       nd, ncd = nparts(dom(l), s), nparts(codom(l),s)

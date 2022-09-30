@@ -215,6 +215,7 @@ representing premodels, which may not satisfy equations/(co)limit constraints)
   eqs::Dict{Symbol, LabeledGraph}
   cset::Type
   crel::Type
+  zero_obs::Set{Symbol}
   function Sketch(schema::LabeledGraph; cones=Cone[],
                   cocones=Cone[], eqs=Vector{Symbol}[]) where V<:AbstractVector
     add_id!(schema)
@@ -240,7 +241,8 @@ representing premodels, which may not satisfy equations/(co)limit constraints)
     [check_cocone(schema, c) for c in cocones]
     cset_type = grph_to_cset(schema)
     crel_type = grph_to_crel(schema)
-    return new(schema, cones, cocones, eqds, cset_type, crel_type)
+    z_obs = get_zero_obs(schema, [c.apex for c in cocones if nv(c.d)==0])
+    return new(schema, cones, cocones, eqds, cset_type, crel_type, z_obs)
   end
 end
 
@@ -249,6 +251,21 @@ elabel(S::Sketch) = elabel(S.schema)
 elabel(S::Sketch, st::Bool) = elabel(S.schema, true)
 labels(S::Sketch) = vcat(S.schema[:vlabel], elabel(S))
 non_id(S::Sketch) = non_id(S.schema)
+function get_zero_obs(S::LabeledGraph, zero_obs::AbstractVector)
+  change = true
+  while change  # Maps into zero obs are zero obs
+    change = false
+    for z in zero_obs
+      for h in hom_in(S, z)
+        sh = S[src(S,h),:vlabel]
+        if sh ∉ zero_obs
+          push!(zero_obs, sh); change = true
+        end
+      end
+    end
+  end
+  return Set(zero_obs)
+end
 
 """Convert a presentation of a schema (as a labeled graph) into a C-Set type"""
 function grph_to_pres(sketch::LabeledGraph)::Presentation
@@ -384,20 +401,27 @@ end
 # Don't yet know if this stuff will be used
 ##########################################
 """List of arrows between two sets of vertices"""
-function hom_set(S::Sketch, d_symbs, cd_symbs)::Vector{Symbol}
+
+function hom_set(S::LabeledGraph, d_symbs, cd_symbs)::Vector{Symbol}
   symbs = [d_symbs, cd_symbs]
-  d_i, cd_i = [vcat(incident(S.schema, x, :vlabel)...) for x in symbs]
+  d_i, cd_i = [vcat(incident(S, x, :vlabel)...) for x in symbs]
   e_i = setdiff(
-        (vcat(incident(S.schema, d_i, :src)...)
-        ∩ vcat(incident(S.schema, cd_i, :tgt)...)),
-        refl(S.schema) )
-  return S.schema[e_i, :elabel]
+        (vcat(incident(S, d_i, :src)...)
+        ∩ vcat(incident(S, cd_i, :tgt)...)),
+        refl(S) )
+  return S[e_i, :elabel]
 end
 
-hom_in(S::Sketch, t::Symbol) = hom_set(S, S.schema[:vlabel], [t])
-hom_out(S::Sketch, t::Symbol) = hom_set(S, [t], S.schema[:vlabel])
-hom_in(S::Sketch, t::Vector{Symbol}) = vcat([hom_in(S,x) for x in t]...)
-hom_out(S::Sketch, t::Vector{Symbol}) = vcat([hom_out(S,x) for x in t]...)
+hom_in(S::LabeledGraph, t::Symbol) = hom_set(S, S[:vlabel], [t])
+hom_out(S::LabeledGraph, t::Symbol) = hom_set(S, [t], S[:vlabel])
+hom_in(S::LabeledGraph, t::Vector{Symbol}) = vcat([hom_in(S,x) for x in t]...)
+hom_out(S::LabeledGraph, t::Vector{Symbol}) = vcat([hom_out(S,x) for x in t]...)
+
+hom_set(S::Sketch, d_symbs, cd_symbs) = hom_set(S.schema, d_symbs, cd_symbs)
+hom_in(S::Sketch, t::Symbol) = hom_in(S.schema, t)
+hom_out(S::Sketch, t::Symbol) = hom_out(S.schema, t)
+hom_in(S::Sketch, t::Vector{Symbol}) = hom_in(S.schema, t)
+hom_out(S::Sketch, t::Vector{Symbol}) = hom_out(S.schema, t)
 
 # TODO:
 # Dualization seems like it could be a simple data migration from Sketch to
