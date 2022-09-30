@@ -1,14 +1,15 @@
 module Sketches
-export Sketch, S0, LabeledGraph, Cone, hom_set, hom_in, hom_out,
+export Sketch, LabeledGraph, Cone, hom_set, hom_in, hom_out,
        sketch_from_json, to_json, add_src, add_tgt, add_srctgt, dual, elabel,
        relsize, sizes, cone_leg,cone_legs, cocone_legs, cocone_leg,
-       add_cone,add_cocone, add_path, labels, vlabel, add_pathrel, add_id, show_lg
+       add_cone,add_cocone, add_path, labels, vlabel, add_pathrel, add_id, show_lg,
+       enum_paths
 
 using Catlab.Present, Catlab.Graphs, Catlab.Theories, Catlab.CategoricalAlgebra
 using Catlab.Programs, Catlab.Graphics
-using Catlab.CategoricalAlgebra.CSetDataStructures: struct_acset
+using Catlab.CategoricalAlgebra.CSetDataStructures: AnonACSetType
 import Catlab.Theories: dual
-import Catlab.Graphs: src, tgt, topological_sort, inneighbors, outneighbors
+import Catlab.Graphs: src, tgt, topological_sort, inneighbors, outneighbors, enumerate_paths, Graph
 import Catlab.CategoricalAlgebra: legs
 using CSetAutomorphisms
 
@@ -26,20 +27,22 @@ outneighbors(g::T, v::Int) where {T<:AbstractReflexiveGraph} =
 
 
 """A finitely presented category (with designated id edges)"""
-@present TheoryLabeledGraph <: SchReflexiveGraph begin
+@present SchLabeledGraph <: SchReflexiveGraph begin
   Label::AttrType
   vlabel::Attr(V,Label)
   elabel::Attr(E,Label)
 end;
 
 @acset_type LabeledGraph_(
-  TheoryLabeledGraph, index=[:src,:tgt,:vlabel,:elabel]
+  SchLabeledGraph, index=[:src,:tgt,:vlabel,:elabel]
 ) <: AbstractReflexiveGraph
 
 const LabeledGraph = LabeledGraph_{Symbol}
 show_lg(x::LabeledGraph) = to_graphviz(x; node_labels=:vlabel, edge_labels=:elabel)
 
 add_id(x::Symbol) = Symbol("id_$x")
+rem_id(x::String) = x[4:end] # assumes add_id(x::Symbol) = "id_$x"
+
 function add_id!(G::LabeledGraph)
   for v in vertices(G)
     if G[v, :refl] == 0
@@ -48,6 +51,12 @@ function add_id!(G::LabeledGraph)
     end
   end
   return G
+end
+
+function rem_id(G::LabeledGraph)
+  newG = LabeledGraph()
+  copy_parts!(newG, G; V=vertices(G), E=non_id(G))
+  return newG
 end
 
 src(G::LabeledGraph, f::Symbol) = G[only(incident(G, f, :elabel)), :src]
@@ -120,41 +129,27 @@ elabel(C::Cone, st::Bool) = elabel(C.d, true)
 ################
 
 const DD = DefaultDict{Pair{Int,Int},Set{Vector{Int}}}
+const Pth = Vector{Int}
 
-"""Enumerate all paths of an acyclic graph, indexed by src+tgt"""
-function enumerate_paths(G_::HasGraph;
-                         sorted::Union{AbstractVector{Int},Nothing}=nothing
-                        )::DD
-  G = deepcopy(G_)
-  rem_parts!(G, :E, findall(e->src(G_,e)==tgt(G_,e), edges(G_)))
-  sorted = isnothing(sorted) ? topological_sort(G) : sorted
-  Path = Vector{Int}
-  paths = [Set{Path}() for _ in 1:nv(G)] # paths that start on a particular V
-  for v in reverse(topological_sort(G))
-    push!(paths[v], Int[]) # add length 0 paths
-    for e in incident(G, v, :src)
-      push!(paths[v], [e]) # add length 1 paths
-      for p in paths[G[e, :tgt]] # add length >1 paths
-        push!(paths[v], vcat([e], p))
-      end
-    end
-  end
-  # Restructure `paths` into a data structure indexed by start AND end V
-  allpaths = DefaultDict{Pair{Int,Int},Set{Path}}(()->Set{Path}())
-  for (s, ps) in enumerate(paths)
-    for p in ps
-      push!(allpaths[s => isempty(p) ? s : G[p[end],:tgt]], p)
-    end
-  end
-  return allpaths
+function Graph(C::T) where {T<:HasGraph}
+  G = Graph()
+  copy_parts!(G, C)
+  return G
+end
+
+"""Return a dictionary with (src,tgt) keys and a list of paths between them"""
+function enum_paths(G::HasGraph)
+  ep = enumerate_paths(Graph(G))
+  return Dict(map(collect(Iterators.product(vertices(G),vertices(G)))) do (i,j)
+    (i,j) => ep[incident(ep, i, :src) ∩ incident(ep, j, :tgt), :eprops]
+  end)
 end
 
 """Add path to commutative diagram without repeating information"""
-function add_path!(schema::LabeledGraph, lg::LabeledGraph, p::Vector{Symbol},
+function add_path!(schema::LabeledGraph, lg::LabeledGraph, p::AbstractVector{Symbol},
                   all_p::Dict{Vector{Symbol}, Int},
-                  eqp::Union{Nothing, Vector{Symbol}}=nothing,
+                  eqp::Union{Nothing, AbstractVector{Symbol}}=nothing,
                    )
-  #all_p = isnothing(all_p) ? union(values(enumerate_paths(lg)...)) : all_p
   s = only(incident(schema, first(p), :elabel))
 
   for i in 1:length(p)
@@ -179,7 +174,7 @@ point, using the information of pairwise equations
 
 eqs:: Vector{Tuple{Symbol, Vector{Symbol}, Vector{Symbol}}}
 """
-function eqs_to_diagrams(n::Symbol, schema::LabeledGraph, eqs)
+function eqs_to_diagrams(schema::LabeledGraph, eqs)
   lgs = [LabeledGraph() for _ in 1:nv(schema)]
   all_ps = [Dict{Vector{Symbol}, Int}(Symbol[]=>1) for _ in 1:nv(schema)]
   for (i, root) in enumerate(schema[:vlabel])
@@ -194,11 +189,11 @@ function eqs_to_diagrams(n::Symbol, schema::LabeledGraph, eqs)
       add_path!(schema, lgs[src_i], p2, all_ps[src_i], p1)
     end
   end
-  return Dict(zip(vlabel(schema),lgs))
+  return Dict(zip(vlabel(schema),add_id!.(lgs)))
 end
 
 function diagram_to_eqs(g::LabeledGraph)
-  map(filter(x->length(x)>1, collect(values(enumerate_paths(g))))) do ps
+  map(filter(x->length(x)>1, collect(values(enum_paths(rem_id(g)))))) do ps
     [g[p,:elabel] for p in ps]
   end
 end
@@ -214,14 +209,13 @@ A finite-limit, finite-colimit sketch. Auto-generates data types for C-sets
 representing premodels, which may not satisfy equations/(co)limit constraints)
 """
 @auto_hash_equals struct Sketch
-  name::Symbol
   schema::LabeledGraph
   cones::Vector{Cone}
   cocones::Vector{Cone}
   eqs::Dict{Symbol, LabeledGraph}
   cset::Type
   crel::Type
-  function Sketch(name::Symbol, schema::LabeledGraph; cones=Cone[],
+  function Sketch(schema::LabeledGraph; cones=Cone[],
                   cocones=Cone[], eqs=Vector{Symbol}[]) where V<:AbstractVector
     add_id!(schema)
     namechars = join(vcat(schema[:vlabel], schema[:elabel]))
@@ -231,23 +225,22 @@ representing premodels, which may not satisfy equations/(co)limit constraints)
     if isempty(eqs)
       eqds = Dict(map(vlabel(schema)) do v
         d = LabeledGraph(); add_part!(d,:V; vlabel=v)
-        v => d
+        v => add_id!(d)
       end)
     else
       if (first(eqs) isa AbstractVector)
         [check_eq(schema, p,q) for (p, q) in eqs]
-        eqds = eqs_to_diagrams(name,schema, eqs)
+        eqds = eqs_to_diagrams(schema, eqs)
       else
         length(eqs) == nv(schema) || error("Bad eq input $eqs")
         eqds = Dict(zip(vlabel(schema),eqs))
       end
     end
-    all(gr->all(==(0),refl(gr)), values(eqds)) || error("refl in eq graph")
     [check_cone(schema, c) for c in cones]
     [check_cocone(schema, c) for c in cocones]
-    cset_type = grph_to_cset(name, schema)
-    crel_type = grph_to_crel(name, schema)
-    return new(name, schema, cones, cocones, eqds, cset_type, crel_type)
+    cset_type = grph_to_cset(schema)
+    crel_type = grph_to_crel(schema)
+    return new(schema, cones, cocones, eqds, cset_type, crel_type)
   end
 end
 
@@ -258,7 +251,7 @@ labels(S::Sketch) = vcat(S.schema[:vlabel], elabel(S))
 non_id(S::Sketch) = non_id(S.schema)
 
 """Convert a presentation of a schema (as a labeled graph) into a C-Set type"""
-function grph_to_cset(name::Symbol, sketch::LabeledGraph)::Type
+function grph_to_pres(sketch::LabeledGraph)::Presentation
   pres = Presentation(FreeSchema)
   xobs = [Ob(FreeSchema, s) for s in sketch[:vlabel]]
 
@@ -269,12 +262,24 @@ function grph_to_cset(name::Symbol, sketch::LabeledGraph)::Type
     ss[findfirst(==(s), Symbol.(string.(ss)))] end
 
   for (e, src, tgt) in elabel(sketch, true)
-      add_generator!(pres, Hom(e, getob(src), getob(tgt)))
+    add_generator!(pres, Hom(e, getob(src), getob(tgt)))
   end
-  expr = struct_acset(name, StructACSet, pres, index=elabel(sketch))
-  eval(expr)
-  return eval(name)
+  return pres
 end
+
+function pres_to_grph(p::Presentation)::LabeledGraph
+  g = LabeledGraph()
+  for v in p.generators[:Ob] add_part!(g, :V; vlabel=Symbol(v)) end
+  for e in p.generators[:Hom]
+    add_edge!(g, only(incident(g,Symbol(dom(e)), :vlabel)),
+                 only(incident(g,Symbol(codom(e)), :vlabel));
+                 elabel=Symbol(e))
+  end
+  return g
+end
+
+grph_to_cset(S::LabeledGraph) = AnonACSetType(grph_to_pres(S))
+  # ; index=collect(elabel(S)))
 
 """
 Get a C-Set type that can store the information of premodels
@@ -294,10 +299,9 @@ diagram, signaling which values are possibly in the path.
 
 
 """
-function grph_to_crel(name::Symbol,sketch::LabeledGraph;
+function grph_to_crel(sketch::LabeledGraph;
                       cones=Cone[], cocones=Cone[], path_eqs=LabeledGraph[]
                       )::Type
-  name′ = Symbol("rel_$name")
   pres = Presentation(FreeSchema)
   getob(s::Symbol) = let ss=pres.generators[:Ob];
                          ss[findfirst(==(s), Symbol.(string.(ss)))] end
@@ -313,15 +317,12 @@ function grph_to_crel(name::Symbol,sketch::LabeledGraph;
     add_generator!(pres, Hom(t, g, getob(tgt_)))
   end
 
-  expr = struct_acset(name′, StructACSet, pres,
-                      index=Symbol.(string.(pres.generators[:Hom])))
-  eval(expr)
-  return eval(name′)
+  return AnonACSetType(pres,index=Symbol.(string.(pres.generators[:Hom])))
 end
 
 
 """Validate path eq"""
-function check_eq(schema::LabeledGraph, p::Vector,q::Vector)::Nothing
+function check_eq(schema::LabeledGraph, p::AbstractVector,q::AbstractVector)::Nothing
   # Get sequence of edge numbers in the schema graph
   pe, qe = [[only(incident(schema, edge, :elabel)) for edge in x]
             for x in [p,q]]
@@ -351,7 +352,7 @@ function check_cone(schema::LabeledGraph, c::Cone)::Nothing
     schema[:vlabel][schema[:tgt][edge]] == c.d[:vlabel][v] || error(
       "Leg $l -> $v does not go to correct vertex $c")
     is_homomorphic(c.d, schema) || error(
-      "Cone diagram does not map into schema $c")
+      "Cone diagram does not map into schema $c \n\n$(schema)")
   end
 end
 
@@ -370,7 +371,7 @@ function check_cocone(schema::LabeledGraph, c::Cone)::Nothing
   end
 end
 
-const S0=Sketch(:dummy, LabeledGraph()) # placeholder sketch
+# const S0=Sketch(:dummy, LabeledGraph()) # placeholder sketch
 
 function project(S::Sketch, crel::StructACSet, c::Cone)
   crel = deepcopy(crel)
@@ -398,23 +399,25 @@ hom_out(S::Sketch, t::Symbol) = hom_set(S, [t], S.schema[:vlabel])
 hom_in(S::Sketch, t::Vector{Symbol}) = vcat([hom_in(S,x) for x in t]...)
 hom_out(S::Sketch, t::Vector{Symbol}) = vcat([hom_out(S,x) for x in t]...)
 
+# TODO:
+# Dualization seems like it could be a simple data migration from Sketch to
+# itself, swapping Cone and Cocone and all srcs with tgts.
+
 """Dual sketch. Optionally rename obs/morphisms and the sketch itself"""
-function dual(s::Sketch, n::Symbol=Symbol(),
-     obs::Vector{Pair{Symbol, Symbol}}=Pair{Symbol, Symbol}[])
+function dual(s::Sketch,obs::Vector{Pair{Symbol,Symbol}}=Pair{Symbol,Symbol}[])
   d = Dict(obs)
   eqsub = ps -> reverse([get(d, p, p) for p in ps])
-  dname = isempty(string(n)) ? Symbol("$(s.name)"*"_dual") : n
   dschema = dualgraph(s.schema, d)
   dcones = [dual(c, d) for c in s.cocones]
   dccones = [dual(c,d) for c in s.cones]
   eqs = vcat(diagram_to_eqs.(values(s.eqs))...)
   deqs = [[eqsub(p) for p in ps] for ps in eqs]
-  Sketch(dname, dschema, cones=dcones, cocones=dccones,eqs=deqs)
+  Sketch(dschema, cones=dcones, cocones=dccones,eqs=deqs)
 end
 
 dual(c::Cone, obs::Dict{Symbol, Symbol}) =
   Cone(dual(dualgraph(c.d, obs)), get(obs,c.apex,c.apex),
-       [(nv(c.d)-i+1 => get(obs, x, x)) for (i, x) in c.legs])
+  Pair{Int64, Symbol}[(nv(c.d)-i+1 => get(obs, x, x)) for (i, x) in c.legs])
 
 """Reverse vertex indices"""
 function dual(lg::LabeledGraph)
@@ -452,14 +455,14 @@ dict_to_cone(d::Dict)::Cone = Cone(
 """TO DO: add cone and eq info to the hash...prob requires CSet for Sketch"""
 Base.hash(S::Sketch) = call_nauty(to_graph(S.schema))
 to_json(S::Sketch) = JSON.json(Dict([
-  :name=>S.name, :schema=>generate_json_acset(S.schema),
+  :schema=>generate_json_acset(S.schema),
   :cones => [cone_to_dict(c) for c in S.cones],
   :cocones => [cone_to_dict(c) for c in S.cocones],
   :eqs => [generate_json_acset(S.eqs[v]) for v in vlabel(S)]]))
 
 function sketch_from_json(s::String)::Sketch
   p = JSON.parse(s)
-  Sketch(Symbol(p["name"]), parse_json_acset(LabeledGraph, p["schema"]),
+  Sketch(parse_json_acset(LabeledGraph, p["schema"]),
     cones=[dict_to_cone(d) for d in p["cones"]],
     cocones=[dict_to_cone(d) for d in p["cocones"]],
     eqs=[parse_json_acset(LabeledGraph,e) for e in p["eqs"]])

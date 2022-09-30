@@ -124,7 +124,7 @@ end
 csp = @acset LabeledGraph begin V=3; E=2;
   vlabel=[:A,:B,:C]; elabel=[:f,:g]; src=[1,2]; tgt=[3,3]
 end
-PB = Sketch(:PB, pbschema; cones=[Cone(csp,:D,[1=>:π₁,2=>:π₂])])
+PB = Sketch(pbschema; cones=[Cone(csp,:D,[1=>:π₁,2=>:π₂])])
 
 
 # Initial data

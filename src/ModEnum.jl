@@ -181,7 +181,7 @@ end
 Continually apply chase_db_step! while there is work remaining to be done.
 """
 function chase_db(S::Sketch, es::EnumState, n=-1)
-  verbose = true
+  verbose = false
   change = true
   while n!=0 && change
     n -= 1

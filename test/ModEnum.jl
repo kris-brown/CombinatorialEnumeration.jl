@@ -54,16 +54,16 @@ expected = [
   @acset(S.cset, begin A=2;B=2;E=2;C=2;I=1;f=1;g=1;c=[1,2];e=[1,2];a=1;b=1 end),
   # f is const, g differs for the A's, so one of the A's is equalized.
   # "a" points to the element that is equalized.
-  @acset(S.cset, begin A=2;B=2;E=1;C=1;I=1;f=1;g=[1,2];c=1;a=1;b=1;e=1 end), # 2
+  @acset(S.cset, begin A=2;B=2;E=1;C=1;I=1;f=1;g=[1,2];c=1;a=1;b=1;e=1 end),
   # f is const, g differs for the A's, so one of the A's is equalized.
   # "a" points to the element that is not equalized.
-  @acset(S.cset, begin A=2;B=2;E=1;C=1;I=1;f=1;g=[2,1];c=1;a=1;b=1;e=2 end), # 5
+  @acset(S.cset, begin A=2;B=2;E=1;C=1;I=1;f=1;g=[2,1];c=1;a=1;b=1;e=2 end),
   # g is const, f differs for the A's, so one of the A's is equalized.
   # "a" points to the element that is equalized.
-  @acset(S.cset, begin A=2;B=2;E=1;C=1;I=1;f=[1,2];g=1;c=1;a=1;b=1;e=1 end), # 5
+  @acset(S.cset, begin A=2;B=2;E=1;C=1;I=1;f=[1,2];g=1;c=1;a=1;b=1;e=1 end),
   # g is const, f differs for the A's, so one of the A's is equalized.
   # "a" points to the element that is not equalized.
-  @acset(S.cset, begin A=2;B=2;E=1;C=1;I=1;f=[2,1];g=1;c=1;a=1;b=2;e=2 end), # 5
+  @acset(S.cset, begin A=2;B=2;E=1;C=1;I=1;f=[2,1];g=1;c=1;a=1;b=2;e=2 end),
 ]
 @test test_models(es, S, expected)
 
