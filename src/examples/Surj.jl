@@ -1,9 +1,8 @@
-module Surj
+module SurjSketch
+export Surj
 
-# using Revise
-using Test
 using Catlab.CategoricalAlgebra
-using CombinatorialEnumeration
+using ...Sketches
 
 """
 Encoding of a surjection as a pair cone and cocone as described in
@@ -25,22 +24,6 @@ c = Cone(@acset(LabeledGraph, begin V=3;E=2;vlabel=[:A,:A,:B];
 cc = Cone(@acset(LabeledGraph, begin V=2;E=2;vlabel=[:C,:A];
           elabel=[:d0, :d1]; src=1; tgt=2 end), :B, [2=>:d])
 
-S = Sketch(schema, cones=[c], cocones=[cc])
-
-function runtests()
-  I = @acset S.cset begin A=1;B=2 end # not possible to have surj
-  es = init_premodel(S,I,[:A,:B])
-  chase_db(S,es)
-  @test test_models(es, S, [])
-
-  I = @acset S.cset begin A=3; B=2 end
-  es = init_premodel(S,I,[:A,:B])
-  chase_db(S,es)
-  expected = @acset S.cset begin A=3;B=2;C=5;
-    d=[1,1,2];d0=[1,1,2,2,3];d1=[1,2,1,2,3] end
-  @test test_models(es, S, [expected])
-
-  return true
-end
+Surj = Sketch(schema, cones=[c], cocones=[cc])
 
 end # module

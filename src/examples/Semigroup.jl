@@ -1,9 +1,8 @@
-module Semigroup
+module SemigroupSketch
+export Semigroup
 
-# using Revise
-using Test
 using Catlab.CategoricalAlgebra
-using CombinatorialEnumeration
+using ...Sketches
 using CSetAutomorphisms
 
 """
@@ -48,7 +47,7 @@ semieqs = [
 
   [[idk, :k], [kid,:k]], # assoc
 ]
-S = Sketch(semig_schema, cones=[paircone, tripcone], eqs=semieqs);
+Semigroup = Sketch(semig_schema, cones=[paircone, tripcone], eqs=semieqs);
 
 function binfuns(i::Int)::Vector{Matrix{Int}}
   res = Matrix{Int}[]
@@ -99,7 +98,7 @@ function from_matrix(m::Matrix{Int64})::StructACSet
     push!(kid_, p1p2d[(k[p1p2d[(a,b)]], c)])
   end
   n2, n3 = length(m), n^3
-  I = S.cset()
+  I = Semigroup.cset()
   add_parts!(I, :s, n)
   add_parts!(I, :s2, n2; π₁=first.(p1_p2), π₂=last.(p1_p2), k=k)
   add_parts!(I, :s3, n3; Π₁=p1,Π₂=p2, Π₃=p3,
@@ -157,12 +156,5 @@ get_semis(i::Int) = collect(Set(values(Dict(map(from_matrix.(binfuns(i))) do m
   call_nauty(m).hsh => m
 end))))
 
-function runtests()
-  I = @acset S.cset begin s=2 end;
-  es = init_premodel(S,I, [:s]);
-  chase_db(S,es)
-  @test test_models(es,S,get_semis(2))
-  return true
-end
 
 end # module

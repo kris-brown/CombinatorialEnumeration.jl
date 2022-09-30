@@ -1,23 +1,24 @@
 module SketchColimits
 export FinCatCSet, SketchCSet, mkFinCatCSet, coapply, SketchMorphism,
        mkFinCatGraph, mkFinCatPresentation, mkFinFunctor,
-       mkLabeledFinCatCSet, unlabel, mkLabeledSketchCSet, rename
+       mkLabeledFinCatCSet, unlabel, mkLabeledSketchCSet, rename, overlap, suffix
 
 using Catlab, Catlab.Present, Catlab.CategoricalAlgebra, Catlab.Theories
 using Catlab.WiringDiagrams
 using Catlab.CategoricalAlgebra.FreeDiagrams: BasicBipartiteFreeDiagram
-using Catlab.CategoricalAlgebra.CSets: ACSetColimit, unpack_diagram, pack_components
+using Catlab.CategoricalAlgebra.CSets: ACSetColimit, unpack_diagram, pack_components, type_components
 using Catlab.CategoricalAlgebra.FinCats: FinCatGraph, FinCatPresentation,
                                          FinCatGraphEq, FreeCatGraph, Path
 
 import Catlab.Graphs: Graph, SchReflexiveGraph, vertices, HasGraph, nv, ne
 import Catlab.CategoricalAlgebra.FinCats: equations, FinCat
+using Catlab.CategoricalAlgebra.FinSets: IdentityFunction, TypeSet
 import Catlab.CategoricalAlgebra: colimit
 import Catlab.Theories: dom, codom, id, attr, adom, acodom_nums, acodom, compose, ⋅
 
 using ..Sketches
 import ..Sketches: Sketch
-using ..Sketches: eqs_to_diagrams, LabeledGraph, grph_to_pres,
+using ..Sketches: eqs_to_diagrams, LabeledGraph, grph_to_pres, SchLabeledGraph,
                   diagram_to_eqs, pres_to_grph, add_id!, rem_id
 
 using DataStructures
@@ -40,7 +41,15 @@ end
 
 function colimit(::Type{Tuple{ACS,Hom}}, diagram; tcs=nothing) where
     {S, Ts, ACS <: StructACSet{S,Ts}, Hom <: LooseACSetTransformation}
-  !isnothing(tcs) || error("must provide $tcs")
+  if isnothing(tcs)
+    tcs = map(diagram[:hom]) do h
+      d1 = Dict(zip(dom(h)[:vlabel], codom(h)[collect(h[:V]),:vlabel]))
+      d2 = Dict(zip(dom(h)[:elabel], codom(h)[collect(h[:E]),:elabel]))
+      d = merge(d1,d2)
+      (Label=IdentityFunction(TypeSet(Symbol)),) #FinFunction(d),)
+    end
+  end
+
   # Colimit of C-set without attributes.
   colimits = map(colimit, unpack_diagram(diagram))
   Xs = cocone_objects(diagram)
@@ -197,7 +206,9 @@ end
 LabeledFinCatCSet, LabeledFLSCSet, LabeledSketchCSet = [x{Symbol} for x in
   [LabeledFinCatCSet_, LabeledFLSCSet_, LabeledSketchCSet_]]
 
-unlabelFinCatCSet, unlabelFLSCSet, unlabelSketchCSet, SketchToFinCat = [
+# These should be derivable automatically since names are the same
+(unlabelFinCatCSet, unlabelFLSCSet, unlabelSketchCSet, SketchToFinCat,
+ LabeledSketchCSettoLabeledGraph) = [
   DeltaMigration(FinFunctor(Dict(vcat([a=>a for a in p.generators[:Ob]],
                                       [a=>a for a in p.generators[:AttrType]])),
                             Dict(vcat([a=>a for a in p.generators[:Hom]],
@@ -207,6 +218,7 @@ unlabelFinCatCSet, unlabelFLSCSet, unlabelSketchCSet, SketchToFinCat = [
     (SchFLS, SchLabeledFLS, FLSCSet, LabeledFLSCSet),
     (SchSketch, SchLabeledSketch, SketchCSet, LabeledSketchCSet),
     (SchLabeledFinCat, SchLabeledSketch, LabeledFinCatCSet, LabeledSketchCSet),
+    (SchLabeledGraph, SchLabeledFinCat, LabeledGraph, LabeledFinCatCSet)
     ]
 ]
 
@@ -299,7 +311,7 @@ function mkFinCatPresentation(X::LabeledFinCatCSet)
   p = Presentation(FreeSchema)
   vs = [add_generator!(p, Ob(FreeSchema, v)) for v in X[:vlabel]]
   cols = collect(enumerate(zip(X[:elabel], X[:src],X[:tgt])))
-  es = map(filter(it->it[1]∉X[:refl], cols)) do (_,(e, s, t))
+  es = map(filter(it->it[1] ∉ X[:refl], cols)) do (_,(e, s, t))
     add_generator!(p, Hom(e, vs[s], vs[t]))
   end
   for lr in equations(mkFinCatGraph(unlabel(X)))
@@ -427,6 +439,13 @@ function mkFinCatCSetMap(F::FinFunctor{T}) where T<:FinCatGraph
 end
 
 
+function mkLabeledSketchCSet(S::LabeledGraph)
+  C = LabeledSketchCSet()
+  copy_parts!(C, S; V=vertices(S), E=edges(S))
+  set_subpart!(C, :root, [add_part!(C, :Dv; dvMap=i, dV=i) for i in vertices(C)])
+  return C
+end
+
 """Sketch -> LabeledSketchCSet"""
 function mkLabeledSketchCSet(S::Sketch)
   C = LabeledSketchCSet()
@@ -465,6 +484,13 @@ function mkLabeledSketchCSet(S::Sketch)
   end
   return C
 end
+
+"""Presentation -> Sketch"""
+Sketch(P::Presentation) = P |> FinCat |> Sketch
+"""FinCatPresentation -> Sketch"""
+Sketch(P::FinCatPresentation)  = P |> mkLabeledFinCatCSet |> Sketch
+"""LabeledFinCatCSet -> Sketch"""
+Sketch(P::LabeledFinCatCSet)  = P |> LabeledSketchCSettoLabeledGraph |> Sketch
 
 """LabeledSketchCSet -> Sketch"""
 function Sketch(S::LabeledSketchCSet)
@@ -646,31 +672,54 @@ function rename(S::FinCatPresentation, d::Dict{Symbol,Symbol})
   mkFinFunctorPres(comb)
 end
 
-function rename(S::Ty, d::Dict{Symbol,Symbol}) where Ty<:HasCat
+"""
+Either match a symbol exactly (and provide exact replacement) or give a list
+of regex replacements to perform on every symbol.
+"""
+function rename(S::LabeledFinCatCSet, d::Dict{SS,SS}
+               ) where {SS<:Union{Symbol,String}}
   T = deepcopy(S)
   for lab in [:vlabel, :elabel]
-    for x in T[lab] d[x] = get(d,x,x) end
-    set_subpart!(T, lab, [d[x] for x in S[lab]])
+    old_lab = deepcopy(S[lab])
+    set_subpart!(T, lab, [rename(x,d) for x in S[lab]])
+    for (oldx,x) in zip(old_lab,T[lab]) d[oldx] = x end
   end
   comps = Dict(k=>parts(S,k) for k in typeof(S.parts).parameters[2])
   return LooseACSetTransformation(comps, Dict(:Label=>FinFunction(d)), S, T)
 end
 
+rename(S::Sketch, d::NamedTuple) = rename(S,Dict(collect(pairs(d))))
 
-function rename(S::Sketch, d::Dict{Symbol,Symbol})
+function rename(S::Sketch, d::AbstractDict)
   comb = rename(mkLabeledSketchCSet(S), d)
   mkSketchMorphism(comb)
 end
 
-function rename(S::LabeledSketchCSet, d::Dict{Symbol,Symbol})
+rename(x::Symbol,d::Dict{Symbol,Symbol}) = d[x]
+function rename(x::Symbol,d::AbstractDict)
+  res = string(x)
+  for (k,v) in collect(d) res = replace(res,k=>v) end
+  return Symbol(res)
+end
+
+function rename(S::LabeledSketchCSet, d::AbstractDict)
   T = deepcopy(S)
+  ff = Dict{Symbol,Symbol}()
   for lab in [:vlabel, :elabel]
-    for x in T[lab] d[x] = get(d,x,x) end
-    set_subpart!(T, lab, [d[x] for x in S[lab]])
+    old_lab = deepcopy(S[lab])
+    set_subpart!(T, lab, [rename(x,d) for x in S[lab]])
+    for (oldx,x) in zip(old_lab,T[lab]) ff[oldx] = x end
   end
   comps = Dict(k=>parts(S,k) for k in typeof(S.parts).parameters[2])
-  return LooseACSetTransformation(comps, Dict(:Label=>FinFunction(d)), S, T)
+  return LooseACSetTransformation(comps, Dict(:Label=>FinFunction(ff)), S, T)
 end
+
+suffix(x::Symbol, k::Symbol) = Symbol("$(x)_$k")
+function suffix(S::Sketch, k::Symbol)
+  SC = mkLabeledSketchCSet(S)
+  rename(SC, Dict(vcat([[v=>suffix(v, k) for v in SC[x]] for x in [:vlabel, :elabel]]...)))
+end
+unsuffix(x::Symbol, k::Symbol) = Symbol(string(x)[1:end-(length(string(k))+1)])
 
 
 # Sketch morphisms
@@ -768,50 +817,86 @@ function colimit(::Type{Tuple{Sketch,SketchMorphism}}, diagram; tcs=nothing)
     ty = typeof((LabeledSketchCSet(),new_diagram[1,:hom]))
     return Multicospan(mkSketchMorphism.(colimit(ty, new_diagram; tcs=tcs)))
   end
+end
+
+# Sugar for defining overlap Multispans
+#######################################
+
+"""
+A list of sketches can be merged along vertices or edges in the graphs
+presenting their schemas. Overlaps are given by a list of Vector{Symbol},
+each element of which specifies an overlapping vertex or edge by name.
+"""
+function overlap(Ss::Vector{Sketch}, ovs::Vector{Vector{Symbol}})
+  apx = LabeledGraph()
+  n = length(Ss)
+  all(x->length(x)==n, ovs) || error("One of the overlaps has wrong #")
+  tcs = [Dict{Symbol,Symbol}() for _ in 1:n]
+  for (i, ov) in enumerate(ovs)
+    if first(ov) ∈ vlabel(first(Ss)) # figure if a morphism or an object
+      sym = Symbol("ob$i")
+      v = add_vertex!(apx, vlabel=sym)
+      set_subpart!(apx, apx[v,:refl], :elabel, add_id(sym))
+      for (o,tc,S) in zip(ov, tcs, Ss)
+        tc[add_id(sym)] = add_id(o)
+      end
+    else
+      sym, o1,o2 = Symbol.(["hom$i","src$i", "tgt$i"])
+      add_edge!()
+      for (o,tc,S) in zip(ov, tcs, Ss)
+        tc[o1] = src(S,o)
+        tc[o2] = tgt(S,o)
+      end
+
+    end
+    for (o,tc) in zip(ov, tcs) tc[sym] = o end
   end
-  # unlabeled_res = c_lim.cocone
-  # cc = codom(first(unlabeled_res)) # colimit apex
-  # new_vlabel = map(parts(cc, :V)) do i
-  #   symb_dict = DefaultDict{Symbol,Vector{Int}}(()->Int[])
-  #   for (legi, (spleg, cspleg)) in enumerate(zip(d_legs, unlabeled_res))
-  #     for (vsymb, vtarg) in zip(vlabel(codom(spleg)), cspleg[:V]|>collect)
-  #       if vtarg == i
-  #         push!(symb_dict[vsymb], legi)
-  #       end
-  #     end
-  #   end
-  #   return Symbol(join(map(sort(collect(symb_dict))) do (s, leg_is)
-  #           if length(leg_is) == length(unlabeled_res)
-  #             return s
-  #           else
-  #             return Symbol("$(s)_"*join(Symbol.(string.(leg_is)),"_"))
-  #           end
-  #         end,"__"))
-  # end
-  # new_elabel = map(filter(i->i∉cc[:refl], parts(cc, :E))) do i
-  #   symb_dict = DefaultDict{Symbol,Vector{Int}}(()->Int[])
-  #   for (legi, (spleg, cspleg)) in enumerate(zip(d_legs, unlabeled_res))
-  #     println("dom cspleg refl $(dom(cspleg)[:refl])", )
-  #     for (vsymb, vtarg) in zip(elabel(codom(spleg)), cspleg[:E]|>collect)
-  #       if vtarg == i
-  #         push!(symb_dict[vsymb], legi)
-  #       end
-  #     end
-  #   end
-  #   return Symbol(join(map(sort(collect(symb_dict))) do (s, leg_is)
-  #     if length(leg_is) == length(unlabeled_res)
-  #       return s
-  #     else
-  #       return Symbol("$(s)_"*join(Symbol.(string.(leg_is)),"_"))
-  #     end
-  #   end,"__"))
-  # end
-  # # warning this assumes that the inputs have all non-id homs first...
-  # old_labels = [
-  #   Symbol.(vlabel(leg)) => vcat(
-  #     Symbol.(elabel(leg)))# , add_id.(Symbol.(vlabel(leg))))
-  #   for leg in codom.(d_legs)]
-  # println("new_vlabel $new_vlabel\nnew_elabel $new_elabel \nold_labels $(old_labels)")
+  apx = mkLabeledSketchCSet(apx)
+  return Multispan([
+    mkSketchMorphism(only(homomorphisms(apx, mkLabeledSketchCSet(S);
+                       type_components=(Label=FinFunction(tc),))))
+    for (S,tc) in zip(Ss,tcs)])
+
+end
+
+function overlap(uwd::UndirectedWiringDiagram,X::NamedTuple{Snames},Y::NamedTuple{Jnames}) where {Snames,Jnames}
+  sort(unique(uwd[:name])) == sort(collect(Jnames)) || error(
+    "Keys don't match box names $(uwd[:name])")
+  sort(unique(uwd[:variable])) == sort(collect(Snames)) || error(
+    "Keys don't match junction names $(uwd[:variable])!=$Snames")
+  Xd = Dict(k=>suffix(v,k) for (k,v) in pairs(X))
+  Yd = Dict(map(collect(pairs(Y))) do (k,v1)
+    k => map(v1) do (k2, v2)
+      k2 => Dict([k3=>suffix(v3,k3) for (k3,v3) in pairs(v2)])
+    end
+  end)
+  tcs = Dict{Symbol,Symbol}()
+  overs = map(enumerate(uwd[:name])) do (b, v)
+    newsymb_comps = Yd[v]
+    snames = uwd[incident(uwd,b,:box),[:junction,:variable]]
+    sketches = [Sketch(codom(Xd[j])) for j in snames]
+    over = [[comp[j] for j in snames] for comp in last.(newsymb_comps)]
+    for (k,vs) in collect(newsymb_comps)
+      for (_,v) in collect(vs)
+        tcs[v] = k; tcs[add_id(v)] = add_id(k) # quick hack for looking up the actual id name
+      end
+    end
+    overlap(sketches, over)
+  end
+  for sname in Snames
+    origS, suffixS = X[sname], codom(Xd[sname])
+    for lab in [:vlabel, :elabel]
+      for sufflab in suffixS[lab]
+        if !haskey(tcs, sufflab)
+          tcs[sufflab] = sufflab
+        end
+      end
+    end
+  end
+
+  return coapply(uwd, overs; tcs=[(Label=FinFunction(tcs),) for _ in parts(uwd,:Port)])
+end
+
 
 
 end # module

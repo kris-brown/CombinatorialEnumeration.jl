@@ -27,14 +27,14 @@ outneighbors(g::T, v::Int) where {T<:AbstractReflexiveGraph} =
 
 
 """A finitely presented category (with designated id edges)"""
-@present TheoryLabeledGraph <: SchReflexiveGraph begin
+@present SchLabeledGraph <: SchReflexiveGraph begin
   Label::AttrType
   vlabel::Attr(V,Label)
   elabel::Attr(E,Label)
 end;
 
 @acset_type LabeledGraph_(
-  TheoryLabeledGraph, index=[:src,:tgt,:vlabel,:elabel]
+  SchLabeledGraph, index=[:src,:tgt,:vlabel,:elabel]
 ) <: AbstractReflexiveGraph
 
 const LabeledGraph = LabeledGraph_{Symbol}
@@ -398,6 +398,10 @@ hom_in(S::Sketch, t::Symbol) = hom_set(S, S.schema[:vlabel], [t])
 hom_out(S::Sketch, t::Symbol) = hom_set(S, [t], S.schema[:vlabel])
 hom_in(S::Sketch, t::Vector{Symbol}) = vcat([hom_in(S,x) for x in t]...)
 hom_out(S::Sketch, t::Vector{Symbol}) = vcat([hom_out(S,x) for x in t]...)
+
+# TODO:
+# Dualization seems like it could be a simple data migration from Sketch to
+# itself, swapping Cone and Cocone and all srcs with tgts.
 
 """Dual sketch. Optionally rename obs/morphisms and the sketch itself"""
 function dual(s::Sketch,obs::Vector{Pair{Symbol,Symbol}}=Pair{Symbol,Symbol}[])

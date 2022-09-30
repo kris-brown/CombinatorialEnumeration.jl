@@ -7,6 +7,8 @@ include(joinpath(@__DIR__, "DB.jl"))
 include(joinpath(@__DIR__, "propagate/Propagate.jl"))
 include(joinpath(@__DIR__, "ModEnum.jl"))
 include(joinpath(@__DIR__, "SketchColimits.jl"))
+include(joinpath(@__DIR__, "examples/Examples.jl"))
+
 
 @reexport using .Sketches
 @reexport using .Models
@@ -14,5 +16,6 @@ include(joinpath(@__DIR__, "SketchColimits.jl"))
 @reexport using .Propagate
 @reexport using .ModEnum
 @reexport using .SketchColimits
+@reexport using .Examples
 
 end # module
