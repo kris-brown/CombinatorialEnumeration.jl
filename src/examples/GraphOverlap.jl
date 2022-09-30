@@ -163,18 +163,18 @@ res = overlap(r,
   # fill junctions with sketches
   (Grph1 = Grph, Grph2 = Grph, Grph3 = Grph, JSV = JointSurj, JSE = JointSurj),
   # fill circles with overlap criteria
-  (V₁=[(:V₁=>(Grph1=:V,JSV=:A))],
-   V₂=[(:V₂=>(Grph2=:V,JSV=:B))],
-   V₃=[(:V₃=>(Grph3=:V,JSV=:A_B))],
+  (V₁=[(:V₁=>(Grph1=:V, JSV=:A))],
+   V₂=[(:V₂=>(Grph2=:V, JSV=:B))],
+   V₃=[(:V₃=>(Grph3=:V, JSV=:C))],
    E₁=[(:E₁=>(Grph1=:E, JSE=:A))],
    E₂=[(:E₂=>(Grph2=:E, JSE=:B))],
-   E₃=[(:E₃=>(Grph3=:E, JSE=:A_B))])) |> apex;
+   E₃=[(:E₃=>(Grph3=:E, JSE=:C))])) |> apex;
 
 # Clean up names via direct substitution or regex
 res2 = rename(res, Dict(
   r"_Grph"=>"", r"_Grph"=>"", r"_Coprod"=>"","1"=>"₁","2"=>"₂","iA"=>"i₁",
-  "iB"=>"i₂","_JS"=>"")) |> codom; # res2.schema |> show_lg
-res2.schema |> show_lg
+  "iB"=>"i₂","_JS"=>"", "A_B"=>"")) |> codom; # res2.schema |> show_lg
+# res2.schema |> show_lg
 
 # Alternate construction of sketch via Graphs, coproducts, monos, and epis.
 # This is a more complicated assembly, but it uses simpler building blocks
