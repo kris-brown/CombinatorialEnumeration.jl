@@ -54,8 +54,7 @@ The downside is that may have to think how to represent their domain as a
 sketch, rather than using arbitrary first-order logic or code. There are at
 least a few upsides:
 - the solver has potential to be very efficient for the few types of constraints
-  sketches require
-- reasoning about combinatorial data, rather than logical formulas, allows us to
+  sketches require reasoning about combinatorial data, rather than logical formulas, allows us to
   work [up to isomorphism](https://github.com/AlgebraicJulia/CSetAutomorphisms.jl)
   incrementally throughout the entire model exploration process, rather than
   quotienting our results at the end.
@@ -63,16 +62,6 @@ least a few upsides:
   relationships between `Mod(A+B)` (i.e. the models of some sketch that is
   related in some way to `A` and `B`) to `Mod(A)`  and `Mod(B)`.
 
-
-### Aside: Notes on categories of sketch models
-From "Toposes, Triples and Theories" (Barr and Wells)
-
-- Theorem 4.3: Every FP-theory has an extension to an LE-theory which has the
-  same models in any LE-category.
-- Theorem 4.4 : The category of set-valued models of a left exact theory has
-   arbitrary limits and all filtered colimits; moreover, these are preserved by
-   the set-valued functors of evaluation at the objects of the theory.
-- Theorem 4.1: (outlines which kinds of sketches have which kinds of (co)limits)
 
 ## Models
 For our purposes, a *model* is an instance of a relational database, i.e. a
@@ -160,7 +149,8 @@ graph.
 
 ![](assets/sketch_multisum.png)
 
-If we manually create this from scratch, the code might look like below.
+If we manually create this from scratch, the code might look like below (full
+source code [here](https://github.com/kris-brown/CombinatorialEnumeration.jl/blob/main/src/examples/GraphOverlap.jl)).
 
 We first write out the schema:
 
@@ -175,12 +165,11 @@ schema = @acset LG begin
 end
 ```
 
-We then define cones/cocones in `for` loops and a lot of hacking together
-`Strings` in order to reduce the boilerplate. This is possible because there is
-some symmetry in the schema:
+We then define all of the cones/cocones, which could be done with a lot of
+tedious boilerplate. Alternatively, we use `for` loops and a lot of hacking
+together `Strings` to do it somewhat concisely, at the expense of readability:
 
 ```julia
-
 """PB is a pullback: all pairs of A+B that agree on their value in c"""
 cs = map([:V=>:ᵥ,:E=>:ₑ]) do (x,y)
   vlabel = Symbol.([fill("$(x)₁_$(x)₂",2)...,"$(x)₃"])
@@ -219,7 +208,7 @@ injs = [mk_inj(x...) for x in
 There is also the specification of path equalities which we omit here.
 
 The above approach could be simplified if one has already implemented a [sketch
-for jointly surjective functions](../../src/examples/JointSurj.jl). Combined with
+for jointly surjective functions](https://github.com/kris-brown/CombinatorialEnumeration.jl/blob/main/src/examples/JointSurj.jl). Combined with
 a sketch for graphs (which can be produced via `Grph = Sketch(SchGraph)` as the
 schema for graphs is already provided by Catlab), we can express our sketch as
 the gluing together of five sketches: two copies of `JointSurj` and three copies
@@ -305,3 +294,13 @@ res = overlap(r,
 As a final throught here, the entire sketch might be conceived as a *product*
 of `Grph` and `JointSurj`. Implementing limits of sketches is much more
 challenging than colimits, so this feature may take a while before it is ready.
+
+## Aside: Notes on categories of sketch models
+Just for reference, from "Toposes, Triples and Theories" (Barr and Wells)
+
+- Theorem 4.3: Every FP-theory has an extension to an LE-theory which has the
+  same models in any LE-category.
+- Theorem 4.4 : The category of set-valued models of a left exact theory has
+   arbitrary limits and all filtered colimits; moreover, these are preserved by
+   the set-valued functors of evaluation at the objects of the theory.
+- Theorem 4.1: (outlines which kinds of sketches have which kinds of (co)limits)
