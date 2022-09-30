@@ -1,7 +1,7 @@
 module TestGraphOverlap
 
 using Test
-using Revise
+# using Revise
 using Catlab.CategoricalAlgebra, Catlab.Graphs
 using CombinatorialEnumeration
 using CombinatorialEnumeration.Examples.GraphOverlapSketch: init_graphs, parse_result, R, GraphOverlap
