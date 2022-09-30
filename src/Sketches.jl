@@ -417,7 +417,7 @@ end
 
 dual(c::Cone, obs::Dict{Symbol, Symbol}) =
   Cone(dual(dualgraph(c.d, obs)), get(obs,c.apex,c.apex),
-       [(nv(c.d)-i+1 => get(obs, x, x)) for (i, x) in c.legs])
+  Pair{Int64, Symbol}[(nv(c.d)-i+1 => get(obs, x, x)) for (i, x) in c.legs])
 
 """Reverse vertex indices"""
 function dual(lg::LabeledGraph)

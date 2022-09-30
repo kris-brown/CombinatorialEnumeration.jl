@@ -676,8 +676,7 @@ end
 Either match a symbol exactly (and provide exact replacement) or give a list
 of regex replacements to perform on every symbol.
 """
-function rename(S::LabeledFinCatCSet, d::Dict{SS,SS}
-               ) where {SS<:Union{Symbol,String}}
+function rename(S::LabeledFinCatCSet, d::AbstractDict)
   T = deepcopy(S)
   for lab in [:vlabel, :elabel]
     old_lab = deepcopy(S[lab])
@@ -695,7 +694,7 @@ function rename(S::Sketch, d::AbstractDict)
   mkSketchMorphism(comb)
 end
 
-rename(x::Symbol,d::Dict{Symbol,Symbol}) = d[x]
+rename(x::Symbol,d::Dict{Symbol,Symbol}) = get(d,x,x)
 function rename(x::Symbol,d::AbstractDict)
   res = string(x)
   for (k,v) in collect(d) res = replace(res,k=>v) end
