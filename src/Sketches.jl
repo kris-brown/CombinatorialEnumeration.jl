@@ -38,7 +38,7 @@ end;
 ) <: AbstractReflexiveGraph
 
 const LabeledGraph = LabeledGraph_{Symbol}
-show_lg(x::LabeledGraph) = to_graphviz(x; node_labels=:vlabel, edge_labels=:elabel)
+show_lg(x::LabeledGraph_) = to_graphviz(x; node_labels=:vlabel, edge_labels=:elabel)
 
 add_id(x::Symbol) = Symbol("id_$x")
 rem_id(x::String) = x[4:end] # assumes add_id(x::Symbol) = "id_$x"

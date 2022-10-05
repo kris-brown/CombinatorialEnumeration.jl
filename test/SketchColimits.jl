@@ -1,7 +1,7 @@
 module TestSketchColimits
 
 
-# using Revise
+using Revise
 using Test
 using Catlab, Catlab.CategoricalAlgebra, Catlab.Present
 using Catlab.Programs, Catlab.WiringDiagrams, Catlab.Graphics

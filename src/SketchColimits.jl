@@ -13,7 +13,7 @@ using Catlab.CategoricalAlgebra.FinCats: FinCatGraph, FinCatPresentation,
 import Catlab.Graphs: Graph, SchReflexiveGraph, vertices, HasGraph, nv, ne
 import Catlab.CategoricalAlgebra.FinCats: equations, FinCat
 using Catlab.CategoricalAlgebra.FinSets: IdentityFunction, TypeSet
-import Catlab.CategoricalAlgebra: colimit
+import Catlab.CategoricalAlgebra: colimit, limit
 import Catlab.Theories: dom, codom, id, attr, adom, acodom_nums, acodom, compose, ⋅
 
 using ..Sketches
