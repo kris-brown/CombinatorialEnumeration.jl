@@ -29,7 +29,7 @@ function prop(es::EnumState, S::Sketch, e::Int, ec::Union{Init,AddEdge,Branch})
   m_change, a_change = propagate!(S, J, ec.add, ec.m)
   es.prop[t] = (J.aux, a_change, m_change) # record the result of prop
   if all(is_no_op,[a_change,m_change]) && !last(crel_to_cset(S,J.model))
-    push!(es.models,t) # found a model
+    push!(es.models[call_nauty(get_model(es,S,t)).hsh],t) # found a model
   end
   return nothing
 end
@@ -46,7 +46,7 @@ function prop(es::EnumState, S::Sketch, e::Int, ec::MergeEdge)
   codom(queued_.r) == codom(a_change.r) || error("HERE")
   es.prop[t] = (J.aux, merge(S,J, queued_, a_change), m_change) # record the result of prop
   if all(is_no_op,[a_change,m_change]) && !last(crel_to_cset(S,J.model))
-    push!(es.models,t) # found a model
+    push!(es.models[call_nauty(get_model(es,S,t)).hsh],t) # found a model
   end
   return nothing
 end
@@ -109,12 +109,16 @@ function branch_fk(es, S::Sketch, i::Int)
   branch_m, branch_val = find_branch_fk(S, J)
   !isnothing(branch_m) || error("Do not yet support branching on anything but FKs")
   ttab = tgt(S,branch_m)
+  seen = []
   for t in vcat(ttab ∉ J.aux.frozen[1] ? [0] : [], parts(J.model, ttab))
     c = add_fk(S,J,branch_m,branch_val,t)
     J_ = deepcopy(J)
     m = exec_change(S, J.model, c)
     J_.model = codom(m)
-    add_premodel(es, S, J_, parent=i=>Branch(c, m))
+    if !any(x->is_isomorphic(x,J_.model),seen)
+      push!(seen, J_.model)
+      add_premodel(es, S, J_, parent=i=>Branch(c, m))
+    end
   end
 end
 
@@ -129,7 +133,7 @@ function chase_db_step!(S::Sketch, es::EnumState, e::Int)
   # only touch vertices with no outgoing arrows
   if isempty(incident(es.grph, t, :src))
     # but ignore failed or completed premodels
-    if t ∉ es.models && !haskey(es.fail, t)
+    if t ∉ vcat(values(es.models)...) && !haskey(es.fail, t)
       change |= true # we are going to do *something*
       if isnothing(es.prop[t]) # if we have not propagated yet
         if verbose println("propagating target $t") end
@@ -225,7 +229,8 @@ they are in, so we make sure canonical hashes match up.
 """
 function test_models(db::EnumState, S::Sketch, expected; f=identity, include_one=false)
   Set(call_nauty(e).hsh for e in expected) == Set(
-      call_nauty(f(get_model(db,S,m))).hsh for m in db.models if include_one || m > 1)
+      call_nauty(f(get_model(db,S,m))).hsh 
+      for m in first.(values(db.models)) if include_one || m > 1)
 end
 
 end # module

@@ -1,6 +1,5 @@
 module TestPropagate
 
-# using Revise
 using Test
 using CombinatorialEnumeration
 using DataStructures
