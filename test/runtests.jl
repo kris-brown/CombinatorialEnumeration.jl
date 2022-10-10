@@ -2,6 +2,34 @@ using Test
 using CombinatorialEnumeration
 
 
+
+
+@testset "Sketches" begin
+  include("core/Sketches.jl")
+end
+
+@testset "SketchColimits" begin
+  include("core/SketchColimits.jl")
+end
+
+
+@testset "Models" begin
+  include("enum/Models.jl")
+end
+
+@testset "DB" begin
+  include("enum/DB.jl")
+end
+
+@testset "Propagate" begin
+  include("enum/Propagate.jl")
+end
+
+@testset "ModEnum" begin
+  include("enum/ModEnum.jl")
+end
+
+
 @testset "Product" begin
   include("examples/Product.jl")
 end
@@ -46,6 +74,9 @@ end
 @testset "SimpleUndirectedGraph" begin
   include("examples/SimpleUndirectedGraph.jl")
 end
+@testset "UndirectedGraph" begin
+  include("examples/UndirectedGraph.jl")
+end
 @testset "Perm" begin
   include("examples/Perm.jl")
 end
@@ -62,29 +93,3 @@ end
 @testset "Category" begin
   include("examples/Category.jl")
 end
-
-@testset "Sketches" begin
-  include("Sketches.jl")
-end
-
-@testset "Models" begin
-  include("Models.jl")
-end
-
-@testset "DB" begin
-  include("DB.jl")
-end
-
-@testset "Propagate" begin
-  include("Propagate.jl")
-end
-
-@testset "ModEnum" begin
-  include("ModEnum.jl")
-end
-
-@testset "SketchColimits" begin
-  include("SketchColimits.jl")
-end
-
-

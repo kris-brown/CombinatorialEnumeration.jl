@@ -1,11 +1,10 @@
 module Propagate
 export propagate!
 
-using ..Sketches, ..Models
+using ....Core, ...Enum.Models
 using Catlab.CategoricalAlgebra, Catlab.Theories
 using DataStructures
-using ..Models: EQ, fk_in, is_total, is_injective, eq_sets, merge_eq, is_surjective
-using ..Sketches: project
+using ...Enum.Models: EQ, fk_in, is_total, is_monic, eq_sets, merge_eq, is_epic
 
 include(joinpath(@__DIR__, "Functionality.jl"))
 include(joinpath(@__DIR__, "Cones.jl"))
@@ -107,8 +106,8 @@ function update_frozen!(S::Sketch,J::SketchModel,m, ch::Change, queued::Addition
   orig_fobs, orig_fhoms = deepcopy(J.aux.frozen)
   chng = false
   verbose = false
-  is_iso(x) = is_injective(ch.l[x]) && is_surjective(ch.l[x])
-  is_isoq(x) = is_injective(queued.l[x]) && is_surjective(queued.l[x])
+  is_iso(x) = is_monic(ch.l[x]) && is_epic(ch.l[x])
+  is_isoq(x) = is_monic(queued.l[x]) && is_epic(queued.l[x])
   for e in elabel(S)
     if src(S,e) ∈ fobs && is_total(S,J,e) && e ∉ fhoms && is_isoq(e)
       if verbose println("adding $e") end

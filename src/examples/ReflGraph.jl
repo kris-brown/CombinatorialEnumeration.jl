@@ -2,12 +2,12 @@ module ReflGraphSketch
 export ReflGraph
 
 using Catlab.CategoricalAlgebra
-using ...Sketches
+using ...Core
 
 
 """# REFLEXIVE GRAPHS # """
 
-schema = @acset LabeledGraph begin
+schema = @acset LGraph begin
     V = 2; E = 3
     vlabel = [:V, :E]; elabel = [:refl, :src, :tgt]
     src    = [1,     2,    2]
@@ -15,7 +15,7 @@ schema = @acset LabeledGraph begin
 end
 
 
-ReflGraph = Sketch(schema, eqs=[[[:refl, :src], Symbol[]], [[:refl, :tgt], Symbol[]]])
+ReflGraph = Sketch(schema, eqs=[[[:refl, :src], [:refl, :tgt], [add_id(:V)]]])
 
 
 end # module

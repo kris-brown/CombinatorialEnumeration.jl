@@ -1,12 +1,11 @@
 module TestModEnum
 
-# using Revise
 using Test
 using CombinatorialEnumeration
 
 using CombinatorialEnumeration.ModEnum: combos_below
 
-include(joinpath(@__DIR__, "TestSketch.jl"));
+include(joinpath(@__DIR__, "../TestSketch.jl"));
 
 
 @test length(combos_below(2, 3)) == 10

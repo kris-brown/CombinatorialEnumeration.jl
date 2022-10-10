@@ -1,6 +1,4 @@
 using Catlab.WiringDiagrams
-using ..Sketches: add_id
-using ..Models: frozen_hom
 
 # Limits
 ########
@@ -10,7 +8,7 @@ function propagate_cones!(S::Sketch, J::SketchModel, f::CSetTransformation, ch::
   verbose = false
   res = Change[]
   for (i,c) in enumerate(S.cones)
-    legcond = any(l->!is_surjective(f[l]), vcat(elabel(c),vlabel(c)))
+    legcond = any(l->!is_epic(f[l]), vcat(elabel(c),vlabel(c)))
     if legcond || !([c.apex,vlabel(c)...] ⊆ J.aux.frozen[1] && ((last.(c.legs) ∪ elabel(c)) ⊆ J.aux.frozen[2]))
       append!(res, propagate_cone!(S, J, f, i, ch))
     else

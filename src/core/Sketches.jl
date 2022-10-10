@@ -1,82 +1,29 @@
 module Sketches
-export Sketch, LabeledGraph, Cone, hom_set, hom_in, hom_out,
+export Sketch, Cone, hom_set, hom_in, hom_out,
        sketch_from_json, to_json, add_src, add_tgt, add_srctgt, dual, elabel,
        relsize, sizes, cone_leg,cone_legs, cocone_legs, cocone_leg,
        add_cone,add_cocone, add_path, labels, vlabel, add_pathrel, add_id, show_lg,
-       enum_paths
+       add_eqs!, grph_to_cset, project, mkFinFunctorPres
 
 using Catlab.Present, Catlab.Graphs, Catlab.Theories, Catlab.CategoricalAlgebra
 using Catlab.Programs, Catlab.Graphics
+using Catlab.CategoricalAlgebra.FinCats: FinCatPresentation
 using Catlab.CategoricalAlgebra.CSetDataStructures: AnonACSetType
 import Catlab.Theories: dual
-import Catlab.Graphs: src, tgt, topological_sort, inneighbors, outneighbors, enumerate_paths, Graph
 import Catlab.CategoricalAlgebra: legs
+import Catlab.Graphs: src, tgt
 using CSetAutomorphisms
 
 using AutoHashEquals
 using JSON
 using DataStructures # DefaultDict, IntDisjointSets
 
-# Reflexive graphs
-##################
-
-inneighbors(g::T, v::Int) where {T<:AbstractReflexiveGraph} =
-  subpart(g, incident(g, v, :tgt), :src)
-outneighbors(g::T, v::Int) where {T<:AbstractReflexiveGraph} =
-  subpart(g, incident(g, v, :src), :tgt)
-
-
-"""A finitely presented category (with designated id edges)"""
-@present SchLabeledGraph <: SchReflexiveGraph begin
-  Label::AttrType
-  vlabel::Attr(V,Label)
-  elabel::Attr(E,Label)
-end;
-
-@acset_type LabeledGraph_(
-  SchLabeledGraph, index=[:src,:tgt,:vlabel,:elabel]
-) <: AbstractReflexiveGraph
-
-const LabeledGraph = LabeledGraph_{Symbol}
-show_lg(x::LabeledGraph) = to_graphviz(x; node_labels=:vlabel, edge_labels=:elabel)
-
-add_id(x::Symbol) = Symbol("id_$x")
-rem_id(x::String) = x[4:end] # assumes add_id(x::Symbol) = "id_$x"
-
-function add_id!(G::LabeledGraph)
-  for v in vertices(G)
-    if G[v, :refl] == 0
-      e = add_edge!(G, v, v; elabel=add_id(G[v,:vlabel]))
-      set_subpart!(G, v, :refl, e)
-    end
-  end
-  return G
-end
-
-function rem_id(G::LabeledGraph)
-  newG = LabeledGraph()
-  copy_parts!(newG, G; V=vertices(G), E=non_id(G))
-  return newG
-end
-
-src(G::LabeledGraph, f::Symbol) = G[only(incident(G, f, :elabel)), :src]
-tgt(G::LabeledGraph, f::Symbol) = G[only(incident(G, f, :elabel)), :tgt]
-vlabel(G::LabeledGraph) = G[:vlabel]
-elabel(G::LabeledGraph) = G[non_id(G), :elabel]
-labels(G::LabeledGraph) = vcat(G[:vlabel], elabel(G))
-add_src(x::Symbol) = Symbol("src_$(x)")
-add_tgt(x::Symbol) = Symbol("tgt_$(x)")
-add_srctgt(x::Symbol) = add_src(x) => add_tgt(x)
-add_cone(x::Int) = Symbol("Cone_$x")
-add_cocone(x::Int) = Symbol("Cocone_$x")
-add_path(n::Symbol, x::Symbol) = Symbol("$(n)_Path_$x")
-add_path(i::Int) = Symbol("P$i")
-add_pathrel(i::Int) = (Symbol("R_$i"), add_srctgt(Symbol("R_$i"))...)
-
-elabel(G::LabeledGraph, st::Bool) =
-  collect(zip([G[non_id(G), x] for x in
-    [:elabel, [:src,:vlabel], [:tgt,:vlabel]]]...))
-non_id(G::LabeledGraph) = setdiff(edges(G), G[:refl]) |> collect |> sort
+using ..LGraphs, ..SketchCSets
+using ..SketchCSets: SchLGraph, LabeledSketchCSettoLGraph, 
+                     LabeledSketchCSetToLG, c_vocab, cc_vocab
+import ..SketchCSets: vlabel, elabel, mkLabeledSketchCSet
+import ..LGraphs: mkFinCatPresentation, add_eq!
+                     
 
 
 # Cones
@@ -92,14 +39,14 @@ legs - a list of pairs, where the first element selects an object in the diagram
        and the second element picks a morphism in the schema
 """
 @auto_hash_equals struct Cone
-  d::LabeledGraph
+  d::LGraph
   apex::Symbol
   legs::Vector{Pair{Int, Symbol}}
   ulegs::Vector{Symbol}
   leg_inds::Dict{Symbol,Vector{Int}}
   is_dag::Bool
   uwd::StructACSet
-  function Cone(d::LabeledGraph, apex::Symbol, legs::Vector{Pair{Int, Symbol}})
+  function Cone(d::LGraph, apex::Symbol, legs::Vector{Pair{Int, Symbol}})
     length(Set(first.(legs))) == length(legs) || error("nonunique legs $legs")
     # check if vertex ordering is toposort. Do things differently if so?
     is_dag = all(e->src(d,e) <= tgt(d,e), edges(d))
@@ -111,7 +58,7 @@ legs - a list of pairs, where the first element selects an object in the diagram
   end
 end
 
-Cone(s::Symbol) = Cone(LabeledGraph(), s, Pair{Int,Symbol}[])
+Cone(s::Symbol) = Cone(LGraph(), s, Pair{Int,Symbol}[])
 
 legs(c::Cone) = c.legs
 vlabel(C::Cone) = vlabel(C.d)
@@ -125,78 +72,7 @@ cocone_leg(c::Int, i::Int, st) = let s = cocone_leg(c, i);
 cocone_apex(c::Int) = Symbol("$(add_cocone(c))_apex")
 elabel(C::Cone, st::Bool) = elabel(C.d, true)
 
-# Path equations
-################
 
-const DD = DefaultDict{Pair{Int,Int},Set{Vector{Int}}}
-const Pth = Vector{Int}
-
-function Graph(C::T) where {T<:HasGraph}
-  G = Graph()
-  copy_parts!(G, C)
-  return G
-end
-
-"""Return a dictionary with (src,tgt) keys and a list of paths between them"""
-function enum_paths(G::HasGraph)
-  ep = enumerate_paths(Graph(G))
-  return Dict(map(collect(Iterators.product(vertices(G),vertices(G)))) do (i,j)
-    (i,j) => ep[incident(ep, i, :src) ∩ incident(ep, j, :tgt), :eprops]
-  end)
-end
-
-"""Add path to commutative diagram without repeating information"""
-function add_path!(schema::LabeledGraph, lg::LabeledGraph, p::AbstractVector{Symbol},
-                  all_p::Dict{Vector{Symbol}, Int},
-                  eqp::Union{Nothing, AbstractVector{Symbol}}=nothing,
-                   )
-  s = only(incident(schema, first(p), :elabel))
-
-  for i in 1:length(p)
-    if !haskey(all_p, p[1:i])
-      e = only(incident(schema, p[i], :elabel))
-      t = schema[e, [:tgt,:vlabel]]
-      if isnothing(eqp) || i < length(p)
-        new_v = add_part!(lg, :V; vlabel=t)
-      else
-        new_v = all_p[eqp]
-      end
-      s = i == 1 ? 1 : all_p[p[1:i-1]]
-      add_part!(lg, :E; src=s, tgt=new_v, elabel=p[i])
-      all_p[p[1:i]] = new_v
-    end
-  end
-end
-
-"""
-Get per-object diagrams encoding all commutative diagrams which start at that
-point, using the information of pairwise equations
-
-eqs:: Vector{Tuple{Symbol, Vector{Symbol}, Vector{Symbol}}}
-"""
-function eqs_to_diagrams(schema::LabeledGraph, eqs)
-  lgs = [LabeledGraph() for _ in 1:nv(schema)]
-  all_ps = [Dict{Vector{Symbol}, Int}(Symbol[]=>1) for _ in 1:nv(schema)]
-  for (i, root) in enumerate(schema[:vlabel])
-    add_part!(lgs[i], :V; vlabel=root)
-  end
-  for (p1, p2) in eqs # TODO: support more than 2 eqs at once
-    src_i = schema[only(incident(schema, first(p1), [:elabel])), :src]
-    if haskey(all_ps[src_i], p2)
-      add_path!(schema, lgs[src_i], p1, all_ps[src_i], Vector{Symbol}(p2))
-    else
-      add_path!(schema, lgs[src_i], p1, all_ps[src_i])
-      add_path!(schema, lgs[src_i], p2, all_ps[src_i], p1)
-    end
-  end
-  return Dict(zip(vlabel(schema),add_id!.(lgs)))
-end
-
-function diagram_to_eqs(g::LabeledGraph)
-  map(filter(x->length(x)>1, collect(values(enum_paths(rem_id(g)))))) do ps
-    [g[p,:elabel] for p in ps]
-  end
-end
 
 # Sketches
 ##########
@@ -209,15 +85,15 @@ A finite-limit, finite-colimit sketch. Auto-generates data types for C-sets
 representing premodels, which may not satisfy equations/(co)limit constraints)
 """
 @auto_hash_equals struct Sketch
-  schema::LabeledGraph
+  schema::LGraph
   cones::Vector{Cone}
   cocones::Vector{Cone}
-  eqs::Dict{Symbol, LabeledGraph}
+  eqs::Dict{Symbol, LGraph}
   cset::Type
   crel::Type
   zero_obs::Set{Symbol}
-  function Sketch(schema::LabeledGraph; cones=Cone[],
-                  cocones=Cone[], eqs=Vector{Symbol}[]) where V<:AbstractVector
+  function Sketch(schema::LGraph; cones=Cone[],
+                  cocones=Cone[], eqs=Vector{Symbol}[])
     add_id!(schema)
     namechars = join(vcat(schema[:vlabel], schema[:elabel]))
     e = "BAD SYMBOL in $schema"
@@ -225,12 +101,16 @@ representing premodels, which may not satisfy equations/(co)limit constraints)
 
     if isempty(eqs)
       eqds = Dict(map(vlabel(schema)) do v
-        d = LabeledGraph(); add_part!(d,:V; vlabel=v)
+        d = LGraph(); add_part!(d,:V; vlabel=v)
         v => add_id!(d)
       end)
     else
       if (first(eqs) isa AbstractVector)
-        [check_eq(schema, p,q) for (p, q) in eqs]
+        for eqs_ in eqs 
+          for (p,q) in zip(eqs_,eqs_[2:end])
+            check_eq(schema, p,q)
+          end
+        end
         eqds = eqs_to_diagrams(schema, eqs)
       else
         length(eqs) == nv(schema) || error("Bad eq input $eqs")
@@ -251,7 +131,7 @@ elabel(S::Sketch) = elabel(S.schema)
 elabel(S::Sketch, st::Bool) = elabel(S.schema, true)
 labels(S::Sketch) = vcat(S.schema[:vlabel], elabel(S))
 non_id(S::Sketch) = non_id(S.schema)
-function get_zero_obs(S::LabeledGraph, zero_obs::AbstractVector)
+function get_zero_obs(S::LGraph, zero_obs::AbstractVector)
   change = true
   while change  # Maps into zero obs are zero obs
     change = false
@@ -268,7 +148,7 @@ function get_zero_obs(S::LabeledGraph, zero_obs::AbstractVector)
 end
 
 """Convert a presentation of a schema (as a labeled graph) into a C-Set type"""
-function grph_to_pres(sketch::LabeledGraph)::Presentation
+function grph_to_pres(sketch::LGraph)
   pres = Presentation(FreeSchema)
   xobs = [Ob(FreeSchema, s) for s in sketch[:vlabel]]
 
@@ -284,19 +164,12 @@ function grph_to_pres(sketch::LabeledGraph)::Presentation
   return pres
 end
 
-function pres_to_grph(p::Presentation)::LabeledGraph
-  g = LabeledGraph()
-  for v in p.generators[:Ob] add_part!(g, :V; vlabel=Symbol(v)) end
-  for e in p.generators[:Hom]
-    add_edge!(g, only(incident(g,Symbol(dom(e)), :vlabel)),
-                 only(incident(g,Symbol(codom(e)), :vlabel));
-                 elabel=Symbol(e))
-  end
-  return g
+"""Presentation -> CSet type"""
+function grph_to_cset(S::LGraph)
+  p =  grph_to_pres(S)
+  AnonACSet(p) |> typeof 
 end
-
-grph_to_cset(S::LabeledGraph) = AnonACSetType(grph_to_pres(S))
-  # ; index=collect(elabel(S)))
+# ; index=collect(elabel(S)))
 
 """
 Get a C-Set type that can store the information of premodels
@@ -316,8 +189,8 @@ diagram, signaling which values are possibly in the path.
 
 
 """
-function grph_to_crel(sketch::LabeledGraph;
-                      cones=Cone[], cocones=Cone[], path_eqs=LabeledGraph[]
+function grph_to_crel(sketch::LGraph;
+                      cones=Cone[], cocones=Cone[], path_eqs=LGraph[]
                       )::Type
   pres = Presentation(FreeSchema)
   getob(s::Symbol) = let ss=pres.generators[:Ob];
@@ -334,23 +207,21 @@ function grph_to_crel(sketch::LabeledGraph;
     add_generator!(pres, Hom(t, g, getob(tgt_)))
   end
 
-  return AnonACSetType(pres,index=Symbol.(string.(pres.generators[:Hom])))
+  return AnonACSet(pres,index=Symbol.(string.(pres.generators[:Hom]))) |> typeof
 end
 
 
 """Validate path eq"""
-function check_eq(schema::LabeledGraph, p::AbstractVector,q::AbstractVector)::Nothing
+function check_eq(schema::LGraph, p::AbstractVector,q::AbstractVector)::Nothing
+  !(isempty(p) || isempty(q)) || error("cannot have empty path: use add_id(::Symbol)")
   # Get sequence of edge numbers in the schema graph
-  pe, qe = [[only(incident(schema, edge, :elabel)) for edge in x]
-            for x in [p,q]]
+  pe, qe = map([p,q]) do x 
+    [only(incident(schema, edge, :elabel)) for edge in x]
+  end
   ps, qs = [isempty(x) ? nothing : schema[:src][x[1]] for x in [pe, qe]]
-  isempty(qe) || ps == qs || error(
-    "path eq don't share start point \n\t$p ($ps) \n\t$q ($qs)")
-  pen, qen = [isempty(x) ? nothing : schema[:tgt][x[end]] for x in [pe,qe]]
-  isempty(qe) || pen == qen || error(
-    "path eq don't share end point \n\t$p ($pen) \n\t$q ($qen)")
-  !isempty(qe) || ps == pen|| error(
-    "path eq has self loop but p doesn't have same start/end $p \n$q")
+  ps == qs || error("path eq don't share start point \n\t$p ($ps) \n\t$q ($qs)")
+  pen, qen = [schema[:tgt][x[end]] for x in [pe,qe]]
+  pen == qen || error("path eq don't share end point \n\t$p ($pen) \n\t$q ($qen)")
   all([schema[:tgt][p1]==schema[:src][p2]
        for (p1, p2) in zip(pe, pe[2:end])]) || error(
          "head/tail mismatch in p $p \n$q")
@@ -361,7 +232,7 @@ function check_eq(schema::LabeledGraph, p::AbstractVector,q::AbstractVector)::No
 end
 
 """Validate cone data"""
-function check_cone(schema::LabeledGraph, c::Cone)::Nothing
+function check_cone(schema::LGraph, c::Cone)::Nothing
   vert = only(incident(schema, c.apex, :vlabel))
   for (v, l) in c.legs
     edge = only(incident(schema, l, :elabel))
@@ -374,7 +245,7 @@ function check_cone(schema::LabeledGraph, c::Cone)::Nothing
 end
 
 """Validate cocone data"""
-function check_cocone(schema::LabeledGraph, c::Cone)::Nothing
+function check_cocone(schema::LGraph, c::Cone)::Nothing
   vert = only(incident(schema, c.apex, :vlabel))
   for (v, l) in c.legs
     edge = only(incident(schema, l, :elabel))
@@ -388,8 +259,6 @@ function check_cocone(schema::LabeledGraph, c::Cone)::Nothing
   end
 end
 
-# const S0=Sketch(:dummy, LabeledGraph()) # placeholder sketch
-
 function project(S::Sketch, crel::StructACSet, c::Cone)
   crel = deepcopy(crel)
   for v in setdiff(vlabel(S),vlabel(c)) ∪ setdiff(elabel(S),elabel(c))
@@ -398,11 +267,20 @@ function project(S::Sketch, crel::StructACSet, c::Cone)
   return crel
 end
 
+"""
+Add 
+"""
+add_eqs!(S::Sketch, eqs) = [add_eq!(S::Sketch, pth) for pth in eqs]
+function add_eq!(S::Sketch, pths)
+  root = src(S, first(first(pths)))
+  S.eqs[root] = reorder_dag(quotient_eqgraph(add_eq!(S.eqs[root], 1, S.schema, pths)...))
+end
+
 # Don't yet know if this stuff will be used
 ##########################################
 """List of arrows between two sets of vertices"""
 
-function hom_set(S::LabeledGraph, d_symbs, cd_symbs)::Vector{Symbol}
+function hom_set(S::LGraph, d_symbs, cd_symbs)::Vector{Symbol}
   symbs = [d_symbs, cd_symbs]
   d_i, cd_i = [vcat(incident(S, x, :vlabel)...) for x in symbs]
   e_i = setdiff(
@@ -412,10 +290,10 @@ function hom_set(S::LabeledGraph, d_symbs, cd_symbs)::Vector{Symbol}
   return S[e_i, :elabel]
 end
 
-hom_in(S::LabeledGraph, t::Symbol) = hom_set(S, S[:vlabel], [t])
-hom_out(S::LabeledGraph, t::Symbol) = hom_set(S, [t], S[:vlabel])
-hom_in(S::LabeledGraph, t::Vector{Symbol}) = vcat([hom_in(S,x) for x in t]...)
-hom_out(S::LabeledGraph, t::Vector{Symbol}) = vcat([hom_out(S,x) for x in t]...)
+hom_in(S::LGraph, t::Symbol) = hom_set(S, S[:vlabel], [t])
+hom_out(S::LGraph, t::Symbol) = hom_set(S, [t], S[:vlabel])
+hom_in(S::LGraph, t::Vector{Symbol}) = vcat([hom_in(S,x) for x in t]...)
+hom_out(S::LGraph, t::Vector{Symbol}) = vcat([hom_out(S,x) for x in t]...)
 
 hom_set(S::Sketch, d_symbs, cd_symbs) = hom_set(S.schema, d_symbs, cd_symbs)
 hom_in(S::Sketch, t::Symbol) = hom_in(S.schema, t)
@@ -444,7 +322,7 @@ dual(c::Cone, obs::Dict{Symbol, Symbol}) =
   Pair{Int64, Symbol}[(nv(c.d)-i+1 => get(obs, x, x)) for (i, x) in c.legs])
 
 """Reverse vertex indices"""
-function dual(lg::LabeledGraph)
+function dual(lg::LGraph)
   G = deepcopy(lg)
   n = nv(lg)+1
   set_subpart!(G, :vlabel,reverse(lg[:vlabel]))
@@ -454,7 +332,7 @@ function dual(lg::LabeledGraph)
 end
 
 """Flip edge directions. Optionally rename symbols"""
-function dualgraph(lg::LabeledGraph, obd::Dict{Symbol, Symbol})
+function dualgraph(lg::LGraph, obd::Dict{Symbol, Symbol})
   g = deepcopy(lg) # reverse vertex order
   set_subpart!(g, :src, lg[:tgt])
   set_subpart!(g, :tgt, lg[:src])
@@ -473,7 +351,7 @@ cone_to_dict(c::Cone) = Dict([
   "apex"=>string(c.apex),"legs"=>c.legs])
 
 dict_to_cone(d::Dict)::Cone = Cone(
-  parse_json_acset(LabeledGraph,d["d"]), Symbol(d["apex"]),
+  parse_json_acset(LGraph,d["d"]), Symbol(d["apex"]),
   Pair{Int,Symbol}[parse(Int, k)=>Symbol(v) for (k, v) in map(only, d["legs"])])
 
 """TO DO: add cone and eq info to the hash...prob requires CSet for Sketch"""
@@ -486,10 +364,10 @@ to_json(S::Sketch) = JSON.json(Dict([
 
 function sketch_from_json(s::String)::Sketch
   p = JSON.parse(s)
-  Sketch(parse_json_acset(LabeledGraph, p["schema"]),
+  Sketch(parse_json_acset(LGraph, p["schema"]),
     cones=[dict_to_cone(d) for d in p["cones"]],
     cocones=[dict_to_cone(d) for d in p["cocones"]],
-    eqs=[parse_json_acset(LabeledGraph,e) for e in p["eqs"]])
+    eqs=[parse_json_acset(LGraph,e) for e in p["eqs"]])
 end
 
 function relsize(S::Sketch, I::StructACSet)::Int
@@ -519,7 +397,7 @@ this optimization, so perhaps we should never do this?
 Maybe we just use the optimized query depending on whether certain tables/fks
 are frozen.
 """
-function cone_query(d::LabeledGraph, legs; optimize=false)::StructACSet
+function cone_query(d::LGraph, legs; optimize=false)::StructACSet
   verbose = false
   vars = [Symbol("x$i") for i in nparts(d, :V)]
   typs = ["$x(_id=x$i)" for (i, x) in enumerate(d[:vlabel])]
@@ -528,10 +406,11 @@ function cone_query(d::LabeledGraph, legs; optimize=false)::StructACSet
     s=src(d, i); t=tgt(d,i); push!(bodstr, "$e(src_$e=x$s, tgt_$e=x$t)")
   end
   push!(bodstr, "end")
+  com = nv(d) == 1 ? "," : ""
   exstr = "($(join(["$(v)_$i=x$k" for vs in values(vars)
                     for (i, (k,v)) in enumerate(legs)],",") ))"
   ctxstr = "($(join(vcat(["x$i::$x"
-                          for (i, x) in enumerate(d[:vlabel])],),",")))"
+                          for (i, x) in enumerate(d[:vlabel])],),","))$com)"
   ex  = Meta.parse(exstr)
   ctx = Meta.parse(ctxstr)
   hed = Expr(:where, ex, ctx)
@@ -565,7 +444,119 @@ cone_query(c::Cone) = cone_query(c.d, c.legs)
 
 
 
-# function cocone_to_cset(n::Symbol, schema::LabeledGraph, c::Cone, i::Int)
+# Conversion between Julia structs and above structures
+########################################################
+
+"""Sketch -> FinCatPresentation"""
+mkFinCatPresentation(S::Sketch) = mkFinCatPresentation(S.schema)
+
+"""Hom(LabeledFinCatCSet) -> Hom(FinCatPresentation)"""
+function mkFinFunctorPres(f::ACSetTransformation)
+  df, cdf = [dom(f), codom(f)]
+  d, cd = mkFinCatPresentation.([df, cdf])
+  cdrefl = Dict([v=>id(Ob(FreeSchema, cdf[i,:vlabel]))
+                 for (i,v) in enumerate(codom(f)[:refl])])
+  cdnonrefl = setdiff(edges(codom(f)), collect(keys(cdrefl)))
+  vmap = Dict{Symbol,Symbol}(map(enumerate(collect(f[:V]))) do (i,v)
+    df[i,:vlabel] => cdf[v,:vlabel]
+  end)
+  emap = Dict(map(filter(ie->ie[1] ∉ df[:refl], collect(enumerate(collect(f[:E]))))) do (i, e)
+      df[i, :elabel] => get(cdrefl, e, cdf[e, :elabel])
+  end)
+  return FinFunctor(vmap, Dict{Symbol, Symbol}(emap), d, cd)
+end
+
+
+# Conversion to combinatorial data structures
+#############################################
+
+"""Sketch -> LabeledSketchCSet"""
+function mkLabeledSketchCSet(S::Sketch)
+  C = LabeledSketchCSet()
+  vdict, edict = [Dict([k=>i for (i,k) in enumerate(f(S))])
+                  for f in [vlabel, elabel]]
+  for (v, reflv) in enumerate(S.schema[[:refl,:elabel]])
+    edict[reflv] = length(edict)+1
+  end
+  vdict_, edict_ = [Dict([k=>Symbol(string(v)) for (k,v) in collect(d)])
+                    for d in [vdict, edict]]
+  S_eqs = Dict(map(collect(S.eqs)) do (v, d)
+    new_d = deepcopy(d)
+    set_subpart!(new_d, :vlabel, [vdict_[x] for x in d[:vlabel]])
+    set_subpart!(new_d, :elabel, [edict_[x] for x in d[:elabel]])
+    vdict[v] => new_d
+  end)
+  Sch = mkLabeledFinCatCSet(FinCat(grph_to_pres(S.schema)); eqdiags=S_eqs)
+  copy_parts!(C, Sch)
+
+  # Add cones
+  for ((cone, cone_leg,cv, ce, csrc, ctgt, capex, cleg, clegtgt, clegedge, c_v,
+       c_e, cvmap, cemap), cs) in zip([c_vocab, cc_vocab], [S.cones, S.cocones])
+    for c in cs
+      c_id = add_part!(C, cone; Dict([capex=>vdict[c.apex]])...)
+      vs = add_parts!(C, cv, nv(c.d); Dict([c_v=>c_id,
+                      cvmap=>[vdict[x] for x in c.d[:vlabel]]])...)
+      nonrefl = setdiff(edges(c.d), c.d[:refl])
+      es = add_parts!(C, ce, ne(c.d)-nv(c.d); Dict([c_e=>c_id,
+                      csrc=>vs[c.d[nonrefl, :src]], ctgt=>vs[c.d[nonrefl, :tgt]],
+                      cemap=>[edict[x] for x in c.d[nonrefl, :elabel]]])...)
+      for (leg_i, leg_val) in c.legs
+        add_part!(C, cone_leg; Dict([cleg=>c_id, clegtgt=>vs[leg_i],
+                  clegedge=>edict[leg_val]])...)
+      end
+    end
+  end
+  return C
+end
+
+"""Presentation -> Sketch"""
+Sketch(P::Presentation) = P |> FinCat |> Sketch
+"""FinCatPresentation -> Sketch"""
+Sketch(P::FinCatPresentation)  = P |> mkLabeledFinCatCSet |> Sketch
+"""LabeledFinCatCSet -> Sketch"""
+Sketch(P::LabeledFinCatCSet)  = P |> LabeledSketchCSettoLGraph |> Sketch
+
+"""LabeledSketchCSet -> Sketch"""
+function Sketch(S::LabeledSketchCSet)
+  vs, es = S[:vlabel], S[:elabel]
+  schema = LabeledSketchCSetToLG(S)   # Get schema
+
+  # Get eqs
+  eqs = vcat(map(vertices(S)) do v
+    d = LGraph()
+    cvs, ces = [incident(S, v, f) for f in [:dV, :dE]]
+    filter!(e -> S[e,:deMap] ∉ S[:refl], ces)
+    add_vertices!(d, collect(S[cvs,[:dvMap,:vlabel]]))
+    add_parts!(d, :E, length(ces); elabel=es[S[ces,:deMap]],
+              src=[findfirst(==(x),cvs) for x in S[ces,:dSrc]],
+              tgt=[findfirst(==(x),cvs) for x in S[ces,:dTgt]])
+    diagram_to_eqs(rem_id(d))
+  end...)
+
+  # Get (co)cones
+  cones, cocones = map([c_vocab, cc_vocab]) do (
+        cone, _, _, _, csrc, ctgt, capex, cleg, clegtgt,
+        clegedge, c_v,c_e, cvmap, cemap)
+    map(parts(S,cone)) do c_id
+      cvs, ces = [incident(S,c_id,f) for f in [c_v,c_e]]
+      cd = LGraph()
+      for cvert in cvs add_part!(cd, :V, vlabel=vs[S[cvert, cvmap]]) end
+      for cedge in ces
+        add_part!(cd, :E, elabel=es[S[cedge, cemap]],
+                  src=findfirst(==(S[cedge,csrc]), cvs),
+                  tgt=findfirst(==(S[cedge,ctgt]), cvs))
+      end
+      lgs = Vector{Pair{Int,Symbol}}(map(incident(S, c_id, cleg)) do l_id
+        findfirst(==(S[l_id, clegtgt]), cvs) => es[S[l_id, clegedge]]
+      end)
+      Cone(cd, vs[S[c_id, capex]], lgs)
+    end
+  end
+
+  Sketch(schema; cones=cones, cocones=cocones, eqs=eqs)
+end
+
+# function cocone_to_cset(n::Symbol, schema::LGraph, c::Cone, i::Int)
     # name = Symbol("$(n)_cocone_$i")
   # pres = Presentation(FreeSchema)
 
@@ -584,7 +575,7 @@ cone_query(c::Cone) = cone_query(c.d, c.legs)
   # return eval(name)
 # end
 
-# function eq_to_type(n::Symbol, p::LabeledGraph, x::Symbol)
+# function eq_to_type(n::Symbol, p::LGraph, x::Symbol)
 #   name = add_path(n,x)
 #   pres = Presentation(FreeSchema)
 #   obs = [add_generator!(pres, Ob(FreeSchema, add_path(i)))
@@ -606,7 +597,7 @@ the apex object, which tuple of elements in the diagram objects are matched. We
 only need one table for each distinct *type* of object in the diagram, not one
 for each vertex in the diagram.
 """
-# function cone_to_cset(n::Symbol, schema::LabeledGraph, c::Cone, i::Int)
+# function cone_to_cset(n::Symbol, schema::LGraph, c::Cone, i::Int)
   # name = Symbol("$(n)_cone_$i")
   # pres = Presentation(FreeSchema)
   # obs = Dict([v=>add_generator!(pres, Ob(FreeSchema, Symbol("$v")))

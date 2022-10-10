@@ -1,56 +1,20 @@
 module Models
 export SketchModel, AuxData,
-       create_premodel,
-       crel_to_cset,
-       cset_to_crel,
-       validate!,
-       Addition,
-       Merge,
-       Change,
-       is_no_op,
-       update_changes,
-       update_change,
-       exec_change,
-       rem_dup_relations,
-       has_map, fk, add_fk, ModelException
+       create_premodel,crel_to_cset,cset_to_crel,validate!,
+       Addition,Merge,Change,is_no_op,update_changes,update_change,
+       exec_change,rem_dup_relations,
+       has_map, fk, add_fk, ModelException, frozen_hom
 # to do: cut this down to only things end-users would use
 
 using Catlab.CategoricalAlgebra, Catlab.Theories
 import Catlab.CategoricalAlgebra: apex, left, right
 
-using ..Sketches
+using ...Core
 
 import Base: union!, merge
 using DataStructures
 using AutoHashEquals
 
-#----------------------------------#
-# Should be upstreamed into catlab #
-#----------------------------------#
-is_surjective(f::FinFunction) =
-  length(codom(f)) == length(Set(values(collect(f))))
-is_injective(f::FinFunction)  =
-  length(dom(f)) == length(Set(values(collect(f))))
-function is_injective(α::ACSetTransformation{S}) where {S}
-    for c in components(α)
-      if !is_injective(c) return false end
-    end
-    return true
-end
-function is_surjective(α::ACSetTransformation{S}) where {S}
-  for c in components(α)
-    if !is_surjective(c) return false end
-  end
-  return true
-end
-image(f) = equalizer(legs(pushout(f,f))...)
-coimage(f) = coequalizer(legs(pullback(f,f))...)
-function epi_mono(f)
-  Im, CoIm = image(f), coimage(f)
-  iso = factorize(Im, factorize(CoIm, f))
-  return ComposablePair(proj(CoIm) ⋅ iso, incl(Im))
-end
-#######
 
 struct ModelException <: Exception
   msg::String
@@ -271,9 +235,9 @@ struct Addition{S} <: Change{S}
       nd, ncd = nparts(dom(l), s), nparts(codom(l),s)
       nd <= ncd || error("cannot add $s (frozen): $nd -> $ncd")
     end
-    is_injective(l) || error("span L must be monic $(components(l))")
-    is_injective(r) || error("span R must be monic $(components(r))")
-    all(is_injective, [l,r]) || error("span must be monic")
+    is_monic(l) || error("span L must be monic $(components(l))")
+    is_monic(r) || error("span R must be monic $(components(r))")
+    all(is_monic, [l,r]) || error("span must be monic")
     all(is_natural, [l, r]) || error("naturality")
     all(e->nparts(dom(l), e) == 0, elabel(S)) || error("No FKs in interface")
     new{Sc}(deepcopy(l),deepcopy(r))
@@ -343,16 +307,16 @@ struct Merge{S} <: Change{S}
       nd == ncd || error("cannot merge/add $s (frozen): $nd -> $ncd")
     end
 
-    is_surjective(ir) || error("ir $ir")
-    is_injective(ij) || error("ij $ij")
+    is_epic(ir) || error("ir $ir")
+    is_monic(ij) || error("ij $ij")
     all(is_natural, [ir, ij]) || error("naturality")
     all(e->nparts(I, e) == 0, elabel(S)) || error("No FKs in interface")
     return new{Sc}(ir, ij)
   end
   function Merge(S::Sketch,_::SketchModel,l::ACSetTransformation{Sc},r::ACSetTransformation{Sc}) where Sc
     dom(l) == dom(r)
-    is_surjective(l) || error("L $l")
-    is_injective(r) || error("R $r")
+    is_epic(l) || error("L $l")
+    is_monic(r) || error("R $r")
     all(is_natural, [l, r]) || error("naturality")
     all(e->nparts(dom(l), e) == 0, elabel(S)) || error("No FKs in interface")
     new{Sc}(l,r)

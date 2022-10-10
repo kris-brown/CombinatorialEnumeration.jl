@@ -2,12 +2,12 @@ module PetriSketch
 export Petri
 
 using Catlab.CategoricalAlgebra
-using ...Sketches
+using ...Core
 using CSetAutomorphisms
 
 
 
-petschema = @acset LabeledGraph begin
+petschema = @acset LGraph begin
   V=4; E=4; vlabel=[:S,:T,:I,:O]; elabel=[:is,:it,:os,:ot];
   src= [3,3,4,4]; tgt= [1,2,1,2]
 end

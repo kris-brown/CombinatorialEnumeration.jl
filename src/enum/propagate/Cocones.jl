@@ -1,4 +1,4 @@
-using ..Models: is_surjective
+using ..Models: is_epic
 
 """
 Compute a normal form for IntDisjointSets so that equivalent ones can be
@@ -28,7 +28,7 @@ frozen.
 function propagate_cocones!(S::Sketch,J::SketchModel,f::CSetTransformation,ch::Change)
   res = Change[]
   for (i,cc) in enumerate(S.cocones)
-    legcond = any(l->!is_surjective(f[l]), unique(last.(cc.legs)))
+    legcond = any(l->!is_epic(f[l]), unique(last.(cc.legs)))
     if legcond || !([cc.apex,vlabel(cc)...] ⊆ J.aux.frozen[1] && ((last.(cc.legs) ∪ elabel(cc)) ⊆ J.aux.frozen[2]))
       append!(res, propagate_cocone!(S, J, f, i, ch))
     end
