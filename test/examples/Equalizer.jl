@@ -9,7 +9,7 @@ S = CombinatorialEnumeration.Equalizer
 I = @acset S.cset begin A=2;B=2 end
 es = init_premodel(S,I, [:A,:B])
 chase_db(S,es)
-ms = [get_model(es,S,i) for i in es.models]
+ms = [get_model(es,S,i) for i in first.(values(es.models))]
 
 expected =[
   # f,g both const and point to same element

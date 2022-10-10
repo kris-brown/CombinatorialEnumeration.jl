@@ -78,12 +78,14 @@ mutable struct EnumState
   ms::Vector{EdgeChange}
   pk::Vector{String}
   fail::Dict{Int,String}
-  models::Set{Int}
+  models::DefaultDict{String,Vector{Int}}
   prop::Vector{Union{Nothing,Tuple{AuxData, Addition, Merge}}}
   # to_branch::Vector{Any}
   function EnumState()
     return new(LGraph(),SketchModel[], EdgeChange[], String[],
-               Dict{Int,String}(), Set{Int}(), Any[])
+               Dict{Int,String}(), 
+               DefaultDict{String,Vector{Int}}(()->Int[]), 
+               Any[])
   end
 end
 
@@ -95,15 +97,15 @@ Base.getindex(es::EnumState, i::String) = es.premodels[findfirst(==(i), es.pk)]
 function add_premodel(es::EnumState, S::Sketch, J::SketchModel;
                       parent::Union{Nothing,Pair{Int,E}}=nothing)::Int where {E <: EdgeChange}
 
-  naut = call_nauty(J.model)
+  naut = string(J.model) #call_nauty(J.model)
 
-  found = findfirst(==(naut.hsh), es.pk)
+  found = findfirst(==(naut), es.pk)
   if !isnothing(found)
     new_v = found
   else
     push!(es.premodels, J)
     push!(es.prop, nothing)
-    push!(es.pk, naut.hsh)
+    push!(es.pk, naut)
     new_v = add_part!(es.grph, :V; vlabel=Symbol(string(length(es.pk))))
   end
 
@@ -129,16 +131,6 @@ function init_premodel(es::EnumState, S::Sketch, ch::StructACSet, freeze=Symbol[
   m = exec_change(S, J.model, ad)
   J.model = codom(m)
   J.aux.eqs = Dict(o=>IntDisjointSets(nparts(J.model, o)) for o in vlabel(S))
-  # J.aux.path_eqs = EQ(map(collect(S.eqs)) do (k,g)
-  #   k=>map(parts(J.model,k)) do p
-  #     map(enumerate(vlabel(g))) do (i,v)
-  #       if i == 1 return [p]
-  #       elseif v ∈ freeze return parts(J.model,v) |> collect
-  #       else return nothing
-  #       end
-  #     end
-  #   end
-  # end)
   freeze_homs = [e for e in elabel(S)
           if src(S,e) ∈ freeze && nparts(J.model,e)==nparts(J.model, src(S,e))]
   J.aux.frozen = (J.aux.frozen[1] ∪ freeze) => (J.aux.frozen[2] ∪ freeze_homs)
