@@ -2,7 +2,7 @@ module LeftInverse_InvolutionSketch
 export LeftInverse_Involution
 
 using Catlab.CategoricalAlgebra
-using ...Sketches
+using ...Core
 
 """
 LEFT INVERSE / INVOLUTION
@@ -20,7 +20,7 @@ compute the models compositionally.
 # Sketch #
 ##########
 
-fgschema = @acset LabeledGraph begin
+fgschema = @acset LGraph begin
   V = 2
   E = 3
   vlabel = [:A,:B]
@@ -29,9 +29,10 @@ fgschema = @acset LabeledGraph begin
   tgt    = [2,  1,  2]
 end
 
-LeftInverse_Involution = Sketch(fgschema; eqs=[
-                                                [[:f, :g],   Symbol[]],
-                                                [[:inv,:inv],Symbol[]]])
+eqs = [
+  [[:f, :g],   [add_id(:A)]],
+  [[:inv,:inv],[add_id(:B)]]]
+LeftInverse_Involution = Sketch(fgschema; eqs=eqs)
 
 
 end # module

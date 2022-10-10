@@ -10,7 +10,7 @@ using CombinatorialEnumeration.Models: EQ, test_premodel
 ##########
 
 # default test case
-include(joinpath(@__DIR__, "TestSketch.jl"));
+include(joinpath(@__DIR__, "../TestSketch.jl"));
 
 # Test model
 #-----------
@@ -72,7 +72,7 @@ mch, ach = propagate!(S,Jp,adpth_ia,m)
 @test is_no_op(mch) # path_eqs are changed, but nothing we can do yet
 @test is_no_op(ach) # path_eqs are changed, but nothing we can do yet
 @test Jpth.aux.path_eqs[:I] == [[[1],[1,2,3],[1,2,3]]] # before
-@test Jp.aux.path_eqs[:I] == [[[1],[1,2,3],[1]]] # after
+@test Jp.aux.path_eqs[:I] == [[[1],[1],[1,2,3]]] # after
 ads = merge(S,Jp, [
   add_fk(S, Jp, :f, i, j) for (i,j) in [1=>2, 2=>3, 3=>1]])
 Jp_ = deepcopy(Jp)
@@ -118,10 +118,10 @@ mch, ach = propagate!(S,Jp_,ads,m)
    A  -->  C
       f
 """
-pbschema = @acset LabeledGraph begin V=4; E=4;
+pbschema = @acset LGraph begin V=4; E=4;
   vlabel=[:A,:B,:C,:D]; elabel=[:f,:g,:π₁,:π₂]; src=[1,2,4,4];tgt=[3,3,1,2]
 end
-csp = @acset LabeledGraph begin V=3; E=2;
+csp = @acset LGraph begin V=3; E=2;
   vlabel=[:A,:B,:C]; elabel=[:f,:g]; src=[1,2]; tgt=[3,3]
 end
 PB = Sketch(pbschema; cones=[Cone(csp,:D,[1=>:π₁,2=>:π₂])])

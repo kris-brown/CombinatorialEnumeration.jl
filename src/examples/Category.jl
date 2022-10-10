@@ -3,7 +3,7 @@ export Cat
 
 using Test
 using Catlab.CategoricalAlgebra, Catlab.Present, Catlab.Theories, Catlab.Present
-using ...Sketches
+using ...Core
 
 """
 Categories are a reflexive graph with a associative binary composition operation
@@ -20,9 +20,10 @@ Analogy with semigroups:
   s3 ↦ Asc
 """
 
-cat_schema = @acset LabeledGraph begin
+cat_schema = @acset LGraph begin
   V = 4; E = 15; vlabel = [:O, :A, :Cmp, :Asc]
-  elabel = [:dom,:codom,:refl,:cmp,:π₁,:π₂,:Π₁,:Π₂,:Π₃, :c1, :c2, :id_cmp, :cmp_id, :reflsrc_id, :id_refltgt]
+  elabel = [:dom,:codom,:refl,:cmp,:π₁,:π₂,:Π₁,:Π₂,:Π₃, 
+            :c1, :c2, :id_cmp, :cmp_id, :reflsrc_id, :id_refltgt]
   src=[2,2,1,3,3,3,4,4,4,4,4,4,4,2,2]
   tgt=[1,1,2,2,2,2,2,2,2,3,3,3,3,3,3]
 end
@@ -35,7 +36,7 @@ end
 codom ↘ ↙ dom
        A
 """
-cmp_diag = @acset LabeledGraph begin
+cmp_diag = @acset LGraph begin
   V = 3;  E = 2; vlabel = [:A,:A,:O]; elabel = [:codom, :dom]
   src = [1,2]; tgt = 3
 end
@@ -48,7 +49,7 @@ cmpcone = Cone(cmp_diag, :Cmp, [1=>:π₁, 2=>:π₂])
  π₂ ↘ ↙ π₁
      A
 """
-asc_diag = @acset LabeledGraph begin
+asc_diag = @acset LGraph begin
   V = 3;  E = 2; vlabel = [:Cmp,:Cmp,:A]; elabel = [:π₂, :π₁]
   src = [1,2]; tgt = 3
 end
@@ -57,32 +58,27 @@ asccone = Cone(asc_diag, :Asc, [1=>:c1, 2=>:c2])
 
 
 cat_eqs = [
-  [[:c1, :π₁], [:Π₁]], #c1_p1
-  [[:c1, :π₂], [:Π₂]], #c1_p2
-  [[:c2, :π₁], [:Π₂]], #c2_p1
-  [[:c2, :π₂], [:Π₃]], #c2_p2
+  [[:c1, :π₁], [:Π₁]],
+  [[:c1, :π₂], [:c2, :π₁], [:Π₂]], 
+  [[:c2, :π₂], [:Π₃]],
 
-  [[:cmp_id, :π₁], [:c1,:cmp]], # cmp_id_p1
-  [[:cmp_id, :π₂], [:Π₃]], # cmpid_p2
+  [[:cmp_id, :π₁], [:c1,:cmp]], 
+  [[:cmp_id, :π₂], [:Π₃]], 
 
-  [[:id_cmp, :π₂], [:c2,:cmp]], # idk_p2
-  [[:id_cmp, :π₁], [:Π₁]], # idk_p1
+  [[:id_cmp, :π₂], [:c2,:cmp]], 
+  [[:id_cmp, :π₁], [:Π₁]],
 
   [[:id_cmp, :cmp], [:cmp_id, :cmp]], # assoc
 
-  [[:refl, :dom], [add_id(:O)]],
-  [[:refl,:codom], [add_id(:O)]],
+  [[:refl, :dom], [:refl,:codom], [add_id(:O)]], # refl has src==tgt
   [[:cmp,:dom], [:π₁, :dom]],
   [[:cmp,:codom], [:π₂, :codom]],
-  # the pair (id, refl;src) has, as first element, id (likewise for tgt)
-  [[:reflsrc_id,:π₂], [add_id(:A)]],
-  [[:id_refltgt,:π₁], [add_id(:A)]],
-  # the pair (id, refl;src) has, as second element, src (likewise for tgt)
+  # encoding (half of) the meaning of reflsrc_id and id_refltgt
   [[:reflsrc_id,:π₁], [:dom, :refl]],
   [[:id_refltgt,:π₂], [:codom, :refl]],
   # the composite of a morphism and an identity is itself
-  [[:reflsrc_id,:cmp], [add_id(:A)]],
-  [[:id_refltgt,:cmp], [add_id(:A)]],
+  [[:reflsrc_id,:π₂], [:reflsrc_id,:cmp], [add_id(:A)]],
+  [[:id_refltgt,:π₁], [:id_refltgt,:cmp], [add_id(:A)]],
 ];
 
 Cat = Sketch(cat_schema, cones=[cmpcone, asccone], eqs=cat_eqs);

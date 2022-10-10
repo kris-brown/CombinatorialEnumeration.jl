@@ -1,11 +1,10 @@
 module TestDB
 
-# using Revise
 using Test
 using CombinatorialEnumeration
 using Catlab.CategoricalAlgebra
 
-include(joinpath(@__DIR__, "TestSketch.jl"));
+include(joinpath(@__DIR__, "../TestSketch.jl"));
 
 J = create_premodel(S);
 es = EnumState()

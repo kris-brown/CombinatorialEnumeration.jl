@@ -2,7 +2,7 @@ module SemigroupSketch
 export Semigroup
 
 using Catlab.CategoricalAlgebra
-using ...Sketches
+using ...Core
 using CSetAutomorphisms
 
 """
@@ -17,7 +17,7 @@ n           | 1 | 2  | 3     | 4                 |  5
 """
 
 p1p2, p2p3, idk, kid = map(Symbol, ["π₁×π₂","π₂×π₃","id×k","k×id"])
-semig_schema = @acset LabeledGraph begin
+semig_schema = @acset LGraph begin
   V = 3; E = 10; vlabel = [:s, :s2, :s3]
   elabel = [:k, :π₁, :π₂, :Π₁, :Π₂, :Π₃, p1p2, p2p3, idk, kid]
   src  = [2,  2,   2,   3,  3,   3,   3,   3,  3,   3]
@@ -26,11 +26,11 @@ end
 n_cset(i) = prod([(i^2 * i), (i^3*i^2)^4])
 
 # s2 is pair
-paircone = Cone(@acset(LabeledGraph, begin V = 2; vlabel = [:s, :s] end),
+paircone = Cone(@acset(LGraph, begin V = 2; vlabel = [:s, :s] end),
         :s2, [1=>:π₁, 2=>:π₂])
 
 # s3 is triple
-tripcone = Cone(@acset(LabeledGraph, begin V = 3; vlabel = [:s, :s, :s] end),
+tripcone = Cone(@acset(LGraph, begin V = 3; vlabel = [:s, :s, :s] end),
         :s3, [1=>:Π₁, 2=>:Π₂, 3=>:Π₃])
 
 semieqs = [

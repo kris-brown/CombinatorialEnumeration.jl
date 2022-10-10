@@ -8,8 +8,8 @@ specified in the language of
 Formally, given a finite (co)- limit sketch, we enumerate its models _up to
 isomorphism_. See more in the
 [documentation](https://kris-brown.github.io/CombinatorialEnumeration.jl/dev/)
-and some examples are in the top-level `data/` directory (e.g. reflexive graphs,
-coequalizers, categories, jointly surjective maps).
+and some examples are in the `examples` directory (e.g. reflexive graphs,
+coequalizers, categories, jointly surjective maps) underneath `src` and `test`.
 
 ## Status
 This is very experimental code, so there may be frequent breaking changes. There

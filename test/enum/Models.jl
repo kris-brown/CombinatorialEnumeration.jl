@@ -1,12 +1,11 @@
 module TestModels
 
-# using Revise
 using Test
 using CombinatorialEnumeration
 using Catlab.CategoricalAlgebra
 using CombinatorialEnumeration.Models: test_premodel
 
-include(joinpath(@__DIR__, "TestSketch.jl"));
+include(joinpath(@__DIR__, "../TestSketch.jl"));
 
 # create_premodel
 J = create_premodel(S)

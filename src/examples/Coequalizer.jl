@@ -1,7 +1,7 @@
 module CoequalizerSketch
 export Coequalizer
 
-using ...Sketches
+using ...Core
 
 using ..EqualizerSketch
 

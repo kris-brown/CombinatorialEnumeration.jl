@@ -1,11 +1,10 @@
 module TestSketches
 
-# using Revise
 using Test
 using CombinatorialEnumeration
 using Catlab.CategoricalAlgebra
 
-include(joinpath(@__DIR__, "TestSketch.jl"));
+include(joinpath(@__DIR__, "../TestSketch.jl"));
 
 @test elabel(S.cones[1]) == [:f,:g]
 @test src(S, :f) == :A

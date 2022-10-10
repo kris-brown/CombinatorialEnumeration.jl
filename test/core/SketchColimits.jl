@@ -1,14 +1,12 @@
 module TestSketchColimits
 
-
-# using Revise
 using Test
 using Catlab, Catlab.CategoricalAlgebra, Catlab.Present
 using Catlab.Programs, Catlab.WiringDiagrams, Catlab.Graphics
 using Catlab.Graphs: path_graph, Graph, SchReflexiveGraph
 using Catlab.CategoricalAlgebra.FinCats: FinCatPresentation
 using CombinatorialEnumeration
-include(joinpath(@__DIR__, "TestSketch.jl"));
+include(joinpath(@__DIR__, "../TestSketch.jl"));
 
 
 # Free category
@@ -80,11 +78,11 @@ F = Span([FinFunctor(Dict(:X=>:E),Dict(),One,c) for c in [C,C2]]...);
 symbs1 = [:V,:E,:id_V,:id_E,:src,:tgt,:refl]
 symbs = [Symbol("$x$y") for x in symbs1 for y in Symbol.(["","2","3"])]
 tc = (Label=FinFunction(Dict([x=>x for x in symbs])),)
-L,R = pushout(F...; tcs=[tc for _ in 1:2]);
+L,R = pushout(F...; type_components=[tc for _ in 1:2]);
 @test all(is_functorial, [L,R])
 
 r = @relation (x,y) where (x::X,y::Y) begin R(x,y) end;
-L,R = coapply(r, [F]; tcs=[tc for _ in 1:2]); # same one as before
+L,R = coapply(r, [F]; type_components=[tc for _ in 1:2]); # same one as before
 
 r = @relation (x,y,z) where (x::X, y::Y, z::Z) begin R(x,y); S(y,z); T(z,x) end;
 # to_graphviz(r;box_labels=true)
@@ -95,14 +93,14 @@ F = Span([FinFunctor(Dict(:X=>:E),Dict(),One,c) for c in [C,C2]]...);
 G = Span([FinFunctor(Dict(:X=>:E),Dict(),One,c) for c in [C2,C3]]...);
 H = Span([FinFunctor(Dict(:X=>:E),Dict(),One,c) for c in [C3,C]]...);
 
-res = coapply(r, [F,G,H]; tcs=[tc for _ in 1:3]);
+res = coapply(r, [F,G,H]; type_components=[tc for _ in 1:3]);
 # (presentation(apex(res)))|>to_graphviz
 
 # Glue Sketches together via pushout
 ####################################
 Singl = FinCat(Graph(1))
 
-I = Sketch(@acset LabeledGraph begin V=3;E=3; vlabel=[:X, :I, :Z];elabel=[:x,:i,:z];src=[1,2,3];tgt=[1,2,3] end)
+I = Sketch(@acset LGraph begin V=3;E=3; vlabel=[:X, :I, :Z];elabel=[:x,:i,:z];src=[1,2,3];tgt=[1,2,3] end)
 Sp = presentation(mkFinCatPresentation(S))
 # Sp |> to_graphviz
 rn = Dict([Symbol(x)=>Symbol("$(x)2") for x in [Sp.generators[:Ob];Sp.generators[:Hom];add_id.(Symbol.(Sp.generators[:Ob]))]])
@@ -117,8 +115,8 @@ r = @relation (x,y) where (x::X,y::Y) begin R(x,y) end;
 symbs1 = [vlabel(S);elabel(S);add_id.(vlabel(S))]
 symbs = [Symbol("$x$y") for x in symbs1 for y in Symbol.(["","2"])]
 tc_ = Dict([:B=>:M,:A2=>:M,:id_A2=>:id_M,:id_B=>:id_M,:I2=>:I,:Z2=>:Z,:id_I2=>:id_I,:id_Z2=>:id_Z])
-tcs = [(Label=FinFunction(merge(Dict(x=>x for x in symbs), tc_)),) for _ in 1:2]
-res = coapply(r, [F]; tcs=tcs);
+type_components = [(Label=FinFunction(merge(Dict(x=>x for x in symbs), tc_)),) for _ in 1:2]
+res = coapply(r, [F]; type_components=type_components);
 # show_lg(apex(res).schema)
 
 end # module

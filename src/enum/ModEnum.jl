@@ -1,7 +1,7 @@
 module ModEnum
 export chase_db, test_models
 
-using ..Sketches
+using ...Core
 using ..Models
 using ..DB
 using ..Propagate: propagate!, update_frozen!
@@ -129,7 +129,7 @@ function chase_db_step!(S::Sketch, es::EnumState, e::Int)
   # only touch vertices with no outgoing arrows
   if isempty(incident(es.grph, t, :src))
     # but ignore failed or completed premodels
-    if t ∉ es.fail ∪ es.models
+    if t ∉ es.models && !haskey(es.fail, t)
       change |= true # we are going to do *something*
       if isnothing(es.prop[t]) # if we have not propagated yet
         if verbose println("propagating target $t") end
@@ -137,7 +137,7 @@ function chase_db_step!(S::Sketch, es::EnumState, e::Int)
           prop(es,S,e, es.ms[e])
         catch a_ModelException
           if a_ModelException isa ModelException
-            push!(es.fail, t)
+            es.fail[t] = a_ModelException.msg
             if verbose println("\tMODELEXCEPTION: $(a_ModelException.msg)")
             end
           else

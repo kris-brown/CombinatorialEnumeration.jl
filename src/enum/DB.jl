@@ -1,8 +1,8 @@
 module DB
 export init_db, add_premodel, init_premodel, get_model, EnumState, Prop,
        MergeEdge,AddEdge, Init, Branch
-import ..Sketches: show_lg
-using DataStructures
+
+
 """
 Interact an in-memory datastore
 
@@ -12,12 +12,16 @@ memory (or we want to serialize results to be used much later).
 This could be reimplemented if needed.
 """
 
-using ..Sketches
-using ..Models
-using ..Models: EQ
 
 using Catlab.CategoricalAlgebra
 using CSetAutomorphisms
+using DataStructures
+
+using ..Models
+using ..Models: EQ
+
+using ...Core
+import ...Core.LGraphs: show_lg
 
 
 #############################
@@ -69,17 +73,17 @@ to_branch - propagating constraints may give us something to branch on that's
             better than the generic 'pick a FK undefined for a particular input'
 """
 mutable struct EnumState
-  grph::LabeledGraph
+  grph::LGraph
   premodels::Vector{SketchModel}
   ms::Vector{EdgeChange}
   pk::Vector{String}
-  fail::Set{Int}
+  fail::Dict{Int,String}
   models::Set{Int}
   prop::Vector{Union{Nothing,Tuple{AuxData, Addition, Merge}}}
   # to_branch::Vector{Any}
   function EnumState()
-    return new(LabeledGraph(),SketchModel[], EdgeChange[], String[],
-               Set{Int}(), Set{Int}(), Any[])
+    return new(LGraph(),SketchModel[], EdgeChange[], String[],
+               Dict{Int,String}(), Set{Int}(), Any[])
   end
 end
 
